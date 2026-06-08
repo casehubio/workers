@@ -1,8 +1,8 @@
-# CaseHub Workers — Camel Worker Design (Revised v4)
+# CaseHub Workers — Camel Worker Design (Revised v5)
 
 **Date:** 2026-06-08
 **Status:** Approved — pending implementation plan
-**Revision:** v4 — third review cycle; NC1–NC4 + ND1–ND5 + NM1–NM2 addressed
+**Revision:** v5 — fourth review cycle; NC1–NC2 + ND1–ND6 + NM1–NM3 addressed
 
 ---
 
@@ -43,11 +43,42 @@ Called from `WorkerScheduleEventHandler` for every work dispatch:
 4. On fault: execution manager fires on `CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT` (NOT `WORKFLOW_EXECUTION_FAILED` — see Section 2.4).
 5. `WorkflowExecutionCompletedHandler` and `PlanItemCompletionHandler` both consume `WORKER_EXECUTION_FINISHED` via `eventBus.publish()`.
 
-### 2.3 CDI resolution and co-deployment constraint
+### 2.3 CDI resolution, required engine deliverable, and co-deployment constraint
 
-`NoOpReactiveWorkerProvisioner` and `NoOpWorkerExecutionManager` are `@DefaultBean @ApplicationScoped`. `CamelReactiveWorkerProvisioner` and `CamelWorkerExecutionManager` are plain `@ApplicationScoped` (no `@DefaultBean`) — CDI displaces the no-op defaults when Camel beans are present.
+`NoOpReactiveWorkerProvisioner` exists in `casehub-engine/runtime/src/main/java/io/casehub/engine/internal/worker/` as `@DefaultBean @ApplicationScoped`. **`NoOpWorkerExecutionManager` does not exist** — it must be created as a required deliverable of this spec, placed alongside the other no-op beans in that package:
 
-**Co-deployment constraint:** `QuartzWorkerExecutionManager` is also `@ApplicationScoped` (not `@DefaultBean`). If `scheduler-quartz` and `workers-camel` are both on the classpath, CDI has two non-default `WorkerExecutionManager` beans and fails with an ambiguous dependency at startup. `workers-camel` is not designed for co-deployment with `scheduler-quartz`. Applications requiring both must implement a composite `WorkerExecutionManager` that routes by worker type — this is a separate concern tracked in a follow-on engine issue (see Section 8).
+```java
+// casehub-engine: runtime/src/main/java/io/casehub/engine/internal/worker/NoOpWorkerExecutionManager.java
+@DefaultBean
+@ApplicationScoped
+public class NoOpWorkerExecutionManager implements WorkerExecutionManager {
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData) {
+        return Uni.createFrom().failure(
+            new ProvisioningException(
+                "No WorkerExecutionManager configured — add an @ApplicationScoped"
+                    + " WorkerExecutionManager implementation"));
+    }
+
+    @Override
+    public Uni<Void> schedulePersistedEvent(EventLog scheduledEventLog) {
+        return Uni.createFrom().voidItem();
+    }
+
+    @Override
+    public int getActiveWorkCount(String workerId) {
+        return 0;
+    }
+}
+```
+
+This mirrors the `NoOpReactiveWorkerProvisioner` pattern exactly. Until this class is committed to `casehub-engine`, a deployment without `scheduler-quartz` AND without `workers-camel` fails CDI startup with an unsatisfied `WorkerExecutionManager` dependency.
+
+`CamelReactiveWorkerProvisioner` and `CamelWorkerExecutionManager` are plain `@ApplicationScoped` (no `@DefaultBean`) — CDI displaces the no-op defaults when Camel beans are present.
+
+**Co-deployment constraint:** `QuartzWorkerExecutionManager` is `@ApplicationScoped` (not `@DefaultBean`). Co-deployment of `scheduler-quartz` and `workers-camel` is unsupported — two non-default `WorkerExecutionManager` beans cause ambiguous CDI at startup. This requires a composite routing manager in a follow-on engine issue (see Section 8).
 
 ### 2.4 Fault event bus address isolation
 
@@ -127,6 +158,21 @@ record PendingCompletion(
 ```java
 record CompletionExpiredEvent(PendingCompletion pending) {}
 ```
+
+**`FaultCallbackEvent`** — CDI event fired by `WorkerCallbackResource` when a REST callback arrives with `faulted=true`. Using a CDI event rather than a SPI avoids CDI ambiguity when multiple worker types are present (same pattern as `CompletionExpiredEvent`). No `@DefaultBean` fallback is needed — if no observer is registered, the event is simply ignored:
+
+```java
+record FaultCallbackEvent(PendingCompletion pending, Throwable cause) {}
+```
+
+`WorkerCallbackResource` fires:
+```java
+faultCallbackEvents.fireAsync(new FaultCallbackEvent(
+    pending.get(),
+    payload.errorMessage() != null ? new RuntimeException(payload.errorMessage()) : null));
+```
+
+`CamelFaultCallbackObserver` in `workers-camel` observes this and routes to `CamelWorkerFaultPublisher` (Section 5.10).
 
 **`WorkerCompletionPayload`** — REST callback body:
 
@@ -208,14 +254,26 @@ public class AsyncWorkerCompletionRegistry {
     int countByWorkerName(String workerName);
 
     /**
-     * Scheduled: removes expired entries and fires CompletionExpiredEvent per entry.
-     * Fires CDI async — workers-common does not know about engine event bus addresses.
+     * Removes expired entries and fires CompletionExpiredEvent per entry via CDI async.
+     * workers-common does not know about engine event bus addresses — CDI events bridge
+     * to worker-type-specific fault publishers.
+     *
+     * Atomicity: expiry check + removal must be atomic. Use ConcurrentHashMap.computeIfPresent:
+     *   map.computeIfPresent(key, (k, pending) -> {
+     *       if (!pending.expiresAt().isBefore(Instant.now())) return pending; // keep
+     *       expiryEvents.fireAsync(new CompletionExpiredEvent(pending));
+     *       return null; // remove atomically
+     *   });
+     * Never check expiresAt separately from remove() — two concurrent scheduler ticks
+     * can both pass the check and fire the event twice.
      */
+    @Scheduled(every = "${casehub.workers.async.expiry-check-interval:5m}")
+    @Blocking
     void expireStale();
 }
 ```
 
-TTL: `casehub.workers.async.timeout-minutes` (default: 60).
+TTL: `casehub.workers.async.timeout-minutes` (default: 60). Expiry check interval: `casehub.workers.async.expiry-check-interval` (default: 5m — 12:1 ratio against default TTL). `@Blocking` is required: `@Scheduled` methods run on a Vert.x event loop thread by default in Quarkus; ConcurrentHashMap iteration must not block an IO thread.
 
 **Deployment constraint:** Registry is JVM-local. `POST /workers/complete/{dispatchId}` must reach the originating JVM. Multi-node deployments require sticky load balancing or a distributed registry.
 
@@ -227,23 +285,19 @@ Headers: X-Casehub-Callback-Token: <token>
 Body: WorkerCompletionPayload
 ```
 
-Validates token constant-time. Calls `AsyncWorkerCompletionRegistry.complete(dispatchId)`. On success: calls `WorkflowCompletionPublisher.complete()` (faulted=false) or notifies via fault path (faulted=true — how the fault is signalled is worker-specific; the resource calls an injected `WorkerFaultNotifier` SPI, described in Section 5.9). Returns 200 idempotently; 404 if `dispatchId` never registered; 401 on bad token.
+Validates token constant-time. Calls `AsyncWorkerCompletionRegistry.complete(dispatchId)`. On success:
+- `faulted=false` → `WorkflowCompletionPublisher.complete(pending.correlationContext(), payload.output())`
+- `faulted=true` → fire `FaultCallbackEvent(pending, cause)` via CDI async, where `cause = payload.errorMessage() != null ? new RuntimeException(payload.errorMessage()) : null`
 
-**`WorkerFaultNotifier` SPI** — `workers-common` needs to notify on fault from `WorkerCallbackResource` without knowing the Camel event bus address. This SPI decouples the resource from the address:
+Returns 200 idempotently; 404 if `dispatchId` never registered; 401 on bad token.
 
-```java
-public interface WorkerFaultNotifier {
-    void notifyFault(PendingCompletion pending, String errorMessage);
-}
-```
-
-`CamelWorkerFaultNotifier` implements it in `workers-camel` and fires on `CAMEL_WORKER_FAULT`. `NoOpWorkerFaultNotifier @DefaultBean` is the fallback.
+`WorkerCallbackResource` runs on a Vert.x IO thread. All operations are non-blocking: `ConcurrentHashMap` lookup + `eventBus.publish()` + `Event.fireAsync()`. No `@Blocking` required.
 
 ---
 
 ## 5. `workers-camel`
 
-Depends on `workers-common`. Implements `ReactiveWorkerProvisioner`, `WorkerExecutionManager`, `CamelWorkerFaultEventHandler`, `CamelCompletionExpiryObserver`.
+Depends on `workers-common`. Implements `ReactiveWorkerProvisioner`, `WorkerExecutionManager`, `CamelWorkerFaultEventHandler`, `CamelCompletionExpiryObserver`, `CamelFaultCallbackObserver`.
 
 ### 5.1 `CamelWorkerEventBusAddresses`
 
@@ -284,14 +338,6 @@ public class CamelWorkerFaultPublisher {
                 ctx.caseInstance(), ctx.worker(), capability,
                 ctx.idempotency(), eventLogId.toString(), cause));
     }
-}
-```
-
-Also implements `WorkerFaultNotifier` (Section 4.2) for REST callback path:
-```java
-@Override
-public void notifyFault(PendingCompletion pending, String errorMessage) {
-    fault(pending, errorMessage != null ? new RuntimeException(errorMessage) : null);
 }
 ```
 
@@ -509,29 +555,38 @@ public class CamelWorkerFaultEventHandler {
         failureLog.setEventType(CaseHubEventType.WORKER_EXECUTION_FAILED);
         failureLog.setStreamType(EventStreamType.CASE);
         failureLog.setTimestamp(Instant.now());
+        // NM2: guard against null cause and null getMessage() separately
+        String errorMsg = (event.cause() != null && event.cause().getMessage() != null)
+            ? event.cause().getMessage() : "unknown";
         failureLog.setMetadata(OBJECT_MAPPER.createObjectNode()
             .put("inputDataHash", inputDataHash)
-            .put("errorMessage", event.cause() != null ? event.cause().getMessage() : "unknown"));
+            .put("errorMessage", errorMsg));
 
         eventLogRepository.append(failureLog, tenancyId)
             .flatMap(ignored -> countFailedAttempts(instance.getUuid(), worker.getName(),
                                                     inputDataHash, tenancyId))
             .flatMap(failureCount -> {
-                RetryPolicy retryPolicy = resolveRetryPolicy(instance, worker);
-                if (retryPolicy != null && failureCount < retryPolicy.maxAttempts()) {
+                RetryPolicy retryPolicy = resolveRetryPolicy(worker);
+                // resolveRetryPolicy() always returns non-null (defaults to 3 attempts, 10s FIXED)
+                if (failureCount < retryPolicy.maxAttempts()) {
                     long delayMs = computeBackoffDelayMs(retryPolicy, failureCount + 1);
                     return reloadAndResubmit(event, delayMs);
                 } else {
-                    // Exhausted — WorkerRetriesExhaustedEvent.idempotency maps to inputDataHash
+                    // Exhausted — WorkerRetriesExhaustedEvent.idempotency = inputDataHash value
                     eventBus.publish(EventBusAddresses.WORKER_RETRIES_EXHAUSTED,
                         new WorkerRetriesExhaustedEvent(
                             instance.getUuid(), worker.getName(), inputDataHash));
                     return Uni.createFrom().voidItem();
                 }
             })
-            .subscribe().with(ignored -> {}, ex ->
-                LOG.errorf(ex, "Fault handling failed for worker %s case %s",
-                           worker.getName(), instance.getUuid()));
+            .subscribe().with(ignored -> {}, ex -> {
+                // Known gap: if the event log write fails, the failure count is not incremented,
+                // no retry fires, and no WORKER_RETRIES_EXHAUSTED is published. The case stays
+                // in its current state (RUNNING or WAITING) indefinitely. This is a terminal
+                // stall — requires manual intervention or a future engine watchdog.
+                LOG.errorf(ex, "Fault handling failed for worker %s case %s — case may stall",
+                           worker.getName(), instance.getUuid());
+            });
     }
 
     private Uni<Long> countFailedAttempts(UUID caseId, String workerId,
@@ -548,11 +603,14 @@ public class CamelWorkerFaultEventHandler {
                 .count());
     }
 
-    private RetryPolicy resolveRetryPolicy(CaseInstance instance, Worker worker) {
-        // Mirror of QuartzWorkerExecutionJobListener.resolveRetryPolicy()
+    private RetryPolicy resolveRetryPolicy(Worker worker) {
+        // Mirror of QuartzWorkerExecutionJobListener.resolveRetryPolicy() exactly.
+        // ExecutionPolicy() no-arg constructor returns RetryPolicy(3, 10000, FIXED).
+        // RetryPolicy() no-arg constructor: 3 attempts, 10s FIXED — the system default.
+        // Null only arrives if explicitly overridden; treat as the system default.
         ExecutionPolicy policy = worker.getExecutionPolicy();
         if (policy == null || policy.retries() == null) {
-            return null;  // no retries configured
+            return new RetryPolicy();  // 3 attempts, 10s FIXED — same as Quartz fallback
         }
         return policy.retries();
     }
@@ -582,9 +640,11 @@ public class CamelWorkerFaultEventHandler {
             .flatMap(eventLog -> {
                 Map<String, Object> inputData =
                     OBJECT_MAPPER.convertValue(eventLog.getPayload(), MAP_TYPE);
-                return Uni.createFrom().completionStage(() ->
-                    CompletableFuture.runAsync(
-                        () -> {}, CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)))
+                // Vert.x timer for delay — keeps all async coordination on one reactor,
+                // avoids ForkJoinPool as a third thread pool in the retry path.
+                // Pattern: Uni.createFrom().emitter(em -> vertx.setTimer(ms, id -> em.complete(null)))
+                return Uni.createFrom().<Void>emitter(
+                        em -> vertx.setTimer(delayMs, id -> em.complete(null)))
                     .flatMap(ignored -> camelWorkerExecutionManager.submit(
                         Long.parseLong(event.eventLogId()),
                         event.caseInstance(), event.worker(), event.capability(), inputData));
@@ -595,7 +655,7 @@ public class CamelWorkerFaultEventHandler {
 
 `reloadAndResubmit()` calls `camelWorkerExecutionManager.submit()` directly, bypassing `WorkerScheduleEventHandler.scheduleUnderLock()`. **Known gap:** concurrent expiry events (e.g., two `expireStale()` scheduler ticks before the first is processed) could produce two retry dispatches. Since `AsyncWorkerCompletionRegistry.complete(dispatchId)` uses `ConcurrentHashMap.remove()` (atomic), the first caller wins and the second gets `Optional.empty()`. The gap is narrow and bounded: it can only occur when `expireStale()` is scheduled faster than it completes, which is prevented by keeping TTL much larger than the scheduler interval. Document as known; add a scheduled-interval guard in configuration.
 
-**`CamelCompletionExpiryObserver`** — separate CDI bean observing async CDI events. Splits event dispatch mechanisms cleanly:
+**`CamelCompletionExpiryObserver`** — observes CDI async `CompletionExpiredEvent` (timeout path):
 
 ```java
 @ApplicationScoped
@@ -604,8 +664,22 @@ public class CamelCompletionExpiryObserver {
     @Inject CamelWorkerFaultPublisher faultPublisher;
 
     void onExpiry(@ObservesAsync CompletionExpiredEvent event) {
-        PendingCompletion pending = event.pending();
-        faultPublisher.fault(pending, new RuntimeException("Async timeout — no completion received"));
+        faultPublisher.fault(event.pending(),
+            new RuntimeException("Async timeout — no completion received within TTL"));
+    }
+}
+```
+
+**`CamelFaultCallbackObserver`** — observes CDI async `FaultCallbackEvent` (REST callback fault path). Separate from `CamelCompletionExpiryObserver` — both are `@ObservesAsync` CDI beans, but kept distinct for test isolation:
+
+```java
+@ApplicationScoped
+public class CamelFaultCallbackObserver {
+
+    @Inject CamelWorkerFaultPublisher faultPublisher;
+
+    void onFaultCallback(@ObservesAsync FaultCallbackEvent event) {
+        faultPublisher.fault(event.pending(), event.cause());
     }
 }
 ```
@@ -640,23 +714,24 @@ Never compile or runtime dependency — test scope only.
 
 ### `workers-camel`
 
-- **NC1 isolation:** `CamelWorkerFaultEventHandler` handles `CAMEL_WORKER_FAULT`; `QuartzWorkerExecutionJobListener` does NOT fire for Camel faults (separate address — verify in integration test that `findByCaseAndWorkerAndType(WORKER_EXECUTION_FAILED)` returns exactly 1 entry after a Camel fault, not 2)
+- **Address isolation:** `CamelWorkerFaultEventHandler` handles `CAMEL_WORKER_FAULT`; verify in integration test that `findByCaseAndWorkerAndType(WORKER_EXECUTION_FAILED)` returns exactly 1 entry after a Camel fault (not 2 — confirms `QuartzWorkerExecutionJobListener` did not also fire)
 - Sync fault: `CamelWorkerFaultCaptor` asserts `WorkflowExecutionFailed` on `CAMEL_WORKER_FAULT`; exactly one `WORKER_EXECUTION_FAILED` event log entry written
-- Retry: `failureCount < retryPolicy.maxAttempts()` — strict `<`; verify backoff delay applied before re-dispatch
-- Retry exhaustion: when `failureCount >= maxAttempts()`, `WORKER_RETRIES_EXHAUSTED` published with correct `(caseId, workerId, inputDataHash)` — note `inputDataHash` maps to `WorkerRetriesExhaustedEvent.idempotency()` record component
-- `countFailedAttempts()`: filters by `metadata.get("inputDataHash")` — verify entries with different `inputDataHash` are not counted
-- Async timeout: `CompletionExpiredEvent` → `CamelCompletionExpiryObserver` → `CAMEL_WORKER_FAULT` → `CamelWorkerFaultEventHandler`
-- Missing route at `submit()`: fault fired, retry path runs, quickly exhausts if route stays missing
+- Retry: `failureCount < retryPolicy.maxAttempts()` — strict `<`; verify backoff delay applied before re-dispatch; verify default policy (3 attempts, 10s FIXED) when `worker.getExecutionPolicy()` is null
+- Retry exhaustion: when `failureCount >= maxAttempts()`, `WORKER_RETRIES_EXHAUSTED` published with `(caseId, workerId, inputDataHash)` — `inputDataHash` maps to `WorkerRetriesExhaustedEvent.idempotency()` component
+- `countFailedAttempts()`: entries with different `inputDataHash` not counted (metadata filter)
+- Async timeout: `expireStale()` → `CompletionExpiredEvent` → `CamelCompletionExpiryObserver` → `CAMEL_WORKER_FAULT` → `CamelWorkerFaultEventHandler`
+- REST callback fault: `WorkerCallbackResource` with `faulted=true` → `FaultCallbackEvent` CDI async → `CamelFaultCallbackObserver` → `CAMEL_WORKER_FAULT` → `CamelWorkerFaultEventHandler`; verify `errorMessage` in event log when `payload.errorMessage()` non-null
+- `expireStale()` atomicity: two concurrent scheduler ticks → only one `CompletionExpiredEvent` fired per entry (computeIfPresent wins)
+- Missing route at `submit()`: `CAMEL_WORKER_FAULT` fires, retries run, retry count reaches `maxAttempts`, `WORKER_RETRIES_EXHAUSTED` published — case does not hang
 - Startup: `CamelCapabilityResolver.initialize()` called via `StartupEvent` — `getCapabilities()` returns non-empty before any engine call
 
 ---
 
 ## 8. Remaining open questions (deferred)
 
-- **Composite `WorkerExecutionManager` for Quartz + Camel co-deployment**: engine must support `@Any Instance<WorkerExecutionManager>` and route by worker type. Separate engine issue — Quartz + Camel single-classpath deployment is unsupported until resolved.
+- **Composite `WorkerExecutionManager` for Quartz + Camel co-deployment**: engine must support `@Any Instance<WorkerExecutionManager>` routing by worker type, or a CDI qualifier scheme. Also applies to `ReactiveWorkerProvisioner` co-deployment. Separate engine issue — single-classpath multi-backend deployment is unsupported until resolved.
+- **Fault handler chain failure is terminal**: if `eventLogRepository.append()` fails, the failure count is not incremented, no retry fires, and no `WORKER_RETRIES_EXHAUSTED` is published. The case stalls in its current state and requires manual intervention. A future engine watchdog for stuck cases would mitigate this.
 - **`workers-common` migration to `casehub-engine`** alongside Drools and Flow
 - **`EndpointRegistry` integration** (platform#73)
-- **Distributed `AsyncWorkerCompletionRegistry`** for multi-node
-- **Retry count deduplication** for concurrent expiry events — add scheduler-interval guard configuration (`casehub.workers.camel.async.expiry-check-interval-minutes` must be `<< casehub.workers.async.timeout-minutes`)
+- **Distributed `AsyncWorkerCompletionRegistry`** for multi-node — sticky routing required until then
 - **Stale `CaseInstance` reference**: reload fresh instance at completion time once multi-node registry ships
-- **`WorkerExecutionFailed` vs empty-output `WorkflowExecutionCompleted`**: Camel uses `WorkflowExecutionFailed` + retry path; confirm with engine team that empty-output `WorkflowExecutionCompleted` (previously proposed) would bypass retry machinery (confirmed it does — fault path is correct choice)
