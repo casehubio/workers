@@ -74,7 +74,7 @@ public class NoOpWorkerExecutionManager implements WorkerExecutionManager {
 }
 ```
 
-This mirrors the `NoOpReactiveWorkerProvisioner` pattern exactly. Until this class is committed to `casehub-engine`, a deployment without `scheduler-quartz` AND without `workers-camel` fails CDI startup with an unsatisfied `WorkerExecutionManager` dependency.
+This mirrors the `NoOpReactiveWorkerProvisioner` pattern exactly. Until this class is committed to `casehub-engine` (tracked: engine#447), a deployment without `scheduler-quartz` AND without `workers-camel` fails CDI startup with an unsatisfied `WorkerExecutionManager` dependency.
 
 `CamelReactiveWorkerProvisioner` and `CamelWorkerExecutionManager` are plain `@ApplicationScoped` (no `@DefaultBean`) — CDI displaces the no-op defaults when Camel beans are present.
 
@@ -116,6 +116,17 @@ casehub-workers/
   workers-camel/
   workers-testing/
 ```
+
+**Package conventions:**
+
+| Module | Root package |
+|---|---|
+| `workers-common` | `io.casehub.workers.common` |
+| `workers-http` | `io.casehub.workers.http` |
+| `workers-camel` | `io.casehub.workers.camel` |
+| `workers-testing` | `io.casehub.workers.testing` |
+
+Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each module root.
 
 ---
 
@@ -543,6 +554,24 @@ public void process(Exchange exchange) throws Exception {
 ```
 
 Body contract: set exchange body to `Map<String, Object>` before routing to `casehub:complete`. Non-Map body → treated as `Map.of()`.
+
+**Camel component class hierarchy** — three classes required by the Camel component API:
+
+```
+CasehubComponent  extends DefaultComponent
+    createEndpoint(String uri, String remaining, Map<String,Object> parameters)
+    → returns CasehubEndpoint
+
+CasehubEndpoint   extends DefaultEndpoint
+    createProducer() → returns CasehubProducer
+    createConsumer() → throws UnsupportedOperationException (producer-only)
+    isSingleton()   → true
+
+CasehubProducer   extends DefaultProducer
+    process(Exchange exchange)  ← the logic shown above lives here
+```
+
+Registration: `META-INF/services/org/apache/camel/component/casehub` (file in `workers-camel/src/main/resources/`) containing the fully qualified class name of `CasehubComponent`. Quarkus Camel picks this up automatically via the Camel component SPI mechanism — no `@RegisterForReflection` required for Quarkus native if the component is on the application classpath (Quarkus Camel extension handles it). For JVM mode, the `META-INF/services` file alone is sufficient.
 
 ### 5.10 Fault handling — two separate beans
 
