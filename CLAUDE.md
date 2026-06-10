@@ -29,8 +29,9 @@ mvn --batch-mode deploy -DskipTests
 | Module | Artifact | Root package | Purpose |
 |--------|----------|-------------|---------|
 | `workers-common` | `casehub-workers-common` | `io.casehub.workers.common` | General async worker infrastructure — shared by all worker types |
-| `workers-http` | `casehub-workers-http` | `io.casehub.workers.http` | HTTP/webhook worker (skeleton — spec not yet written) |
+| `workers-http` | `casehub-workers-http` | `io.casehub.workers.http` | HTTP/webhook worker — 3-tier endpoint resolution, sync/async dispatch |
 | `workers-camel` | `casehub-workers-camel` | `io.casehub.workers.camel` | Apache Camel worker — 300+ connectors |
+| `workers-github-actions` | `casehub-workers-github-actions` | `io.casehub.workers.githubactions` | GitHub Actions worker — workflow_dispatch + repository_dispatch |
 | `workers-testing` | `casehub-workers-testing` | `io.casehub.workers.testing` | Shared test fixtures — **test scope only, never compile/runtime** |
 
 Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each root package.
@@ -57,7 +58,9 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `AsyncWorkerCompletionRegistry` | In-memory pending completion store; `expireStale()` fires `CompletionExpiredEvent` CDI async |
 | `WorkflowCompletionPublisher` | Fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` via `eventBus.publish()` |
 | `WorkerCallbackResource` | `POST /workers/complete/{dispatchId}` — REST callback for external systems |
-| `WorkerRetrySupport` | Shared retry building blocks — `persistFailureLog`, `countFailedAttempts`, `publishRetriesExhausted`, `resolveRetryPolicy`, `computeBackoffDelayMs` |
+| `WorkerRetrySupport` | Shared retry building blocks — `persistFailureLog`, `countFailedAttempts`, `publishRetriesExhausted`, `resolveRetryPolicy`, `computeBackoffDelayMs`, `parseRetryAfter` |
+| `PermanentFaultException` | Worker-agnostic "don't retry" signal — extracted from workers-http |
+| `RetryAfterException` | Worker-agnostic "retry after delay" signal — extracted from workers-http |
 | `FaultCallbackEvent` | CDI async event fired by `WorkerCallbackResource` on faulted REST callback |
 | `CompletionExpiredEvent` | CDI async event fired by `AsyncWorkerCompletionRegistry.expireStale()` |
 | `CasehubWorkerHeaders` | Header name constants shared across all worker types |
@@ -83,10 +86,20 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `HttpEndpointResolver` | 3-tier capability tag → `ResolvedEndpoint` resolution (SPI bean > config > EndpointRegistry) |
 | `HttpWorkerExecutionManager` | Sync/async dispatch via Vert.x WebClient — reactive-native, no `emitOn` needed |
 | `HttpWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `HTTP_WORKER_FAULT` |
-| `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — uses `WorkerRetrySupport`, adds `PermanentFaultException` (4xx) and `RetryAfterException` (429) |
-| `PermanentFaultException` | 4xx faults — bypasses retry immediately |
-| `RetryAfterException` | 429 faults — carries `retryAfterMs` from `Retry-After` header |
+| `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — uses `WorkerRetrySupport`, `PermanentFaultException` (4xx) and `RetryAfterException` (429) from workers-common |
 | `ExchangeMode` | `SYNC` (default) or `ASYNC` |
+
+## workers-github-actions Key Types
+
+| Type | Purpose |
+|------|---------|
+| `GitHubActionsWorkerConstants.WORKER_TYPE = "github-actions"` | workerType discriminator |
+| `GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT` | Separate fault address from HTTP and Camel |
+| `GitHubActionsTokenResolver` | Per-org + global PAT resolution from config properties |
+| `GitHubActionsWorkerExecutionManager` | Dispatches via Vert.x WebClient — fire-and-forget on 204 |
+| `GitHubActionsWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `GITHUB_ACTIONS_WORKER_FAULT` |
+| `GitHubActionsWorkerFaultEventHandler` | `@ConsumeEvent(GITHUB_ACTIONS_WORKER_FAULT, blocking=true)` — 422 on workflow-dispatch retryable (60s), 422 on repository-dispatch permanent |
+| `GitHubActionsReactiveWorkerProvisioner` | Capability probe — validates tags and token availability |
 
 ## Key Rules
 
@@ -95,18 +108,22 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
 - Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
-- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
+- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
 - Every CDI event observer MUST filter by `pending.workerType()` — required when two worker modules are co-deployed.
 - Camel retry uses `emitOn(Infrastructure.getDefaultWorkerPool())` after Vert.x timer — `ProducerTemplate` is blocking.
 - HTTP retry does NOT use `emitOn` — `WebClient` is event-loop native, no thread hop needed.
 - Retry logic via `WorkerRetrySupport`: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED).
 - HTTP 4xx (except 429) throws `PermanentFaultException` — skips retry immediately.
 - HTTP 429 with `Retry-After` header throws `RetryAfterException` — overrides configured backoff delay.
+- GitHub Actions retry does NOT use `emitOn` — `WebClient` is event-loop native (same as HTTP).
+- GitHub Actions 422 on `workflow-dispatch` throws `RetryAfterException(60_000)` — workflow_dispatch trigger caching (GE-20260426-805acb). 422 on `repository-dispatch` throws `PermanentFaultException` — malformed request.
+- GitHub Actions `ref` is required for `workflow-dispatch` — GitHub API rejects requests without it.
 
 ## Co-deployment Constraints
 
 - `workers-camel` + `scheduler-quartz` on same classpath → CDI ambiguity on `WorkerExecutionManager` → startup failure. Unsupported until a composite manager is built in engine.
 - `workers-camel` + `workers-http` → `workerType` discriminator in `PendingCompletion` prevents double CDI event handling. `WorkerExecutionManager` CDI ambiguity still applies — same composite manager needed.
+- `workers-github-actions` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType` discriminator prevents event cross-talk.
 
 ## Cross-Repo Dependencies
 

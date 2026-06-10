@@ -22,6 +22,7 @@
         <module>workers-common</module>
         <module>workers-http</module>
         <module>workers-camel</module>
+        <module>workers-github-actions</module>
         <module>workers-testing</module>
     </modules>
 
@@ -65,6 +66,11 @@
             <dependency>
                 <groupId>io.casehub</groupId>
                 <artifactId>casehub-workers-camel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-github-actions</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
