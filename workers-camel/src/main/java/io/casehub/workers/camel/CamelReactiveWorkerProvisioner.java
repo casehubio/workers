@@ -24,7 +24,7 @@ public class CamelReactiveWorkerProvisioner implements ReactiveWorkerProvisioner
     }
 
     @Override
-    public Uni<Void> terminate(String workerId) {
+    public Uni<Void> terminate(String workerId, String tenancyId) {
         return Uni.createFrom().voidItem();
     }
 

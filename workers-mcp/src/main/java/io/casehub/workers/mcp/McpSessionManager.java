@@ -11,7 +11,6 @@ import io.vertx.mutiny.ext.web.client.HttpRequest;
 import io.vertx.mutiny.ext.web.client.HttpResponse;
 import io.vertx.mutiny.ext.web.client.WebClient;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.Map;
@@ -56,25 +55,27 @@ public class McpSessionManager {
         sessions.remove(serverName);
     }
 
-    @PreDestroy
-    void shutdown() {
-        for (Map.Entry<String, Uni<McpSession>> entry : sessions.entrySet()) {
-            try {
-                McpSession session = entry.getValue()
-                    .await().atMost(java.time.Duration.ofMillis(100));
-                if (session != null && session.hasSessionId()) {
-                    ResolvedMcpServer server = serverResolver.serverByName(entry.getKey());
-                    HttpRequest<Buffer> request = webClient.requestAbs(HttpMethod.DELETE, server.url());
-                    request.putHeader("Mcp-Session-Id", session.sessionId());
-                    request.send().subscribe().with(
-                        resp -> LOG.debugf("Shutdown DELETE for %s: %d", entry.getKey(), resp.statusCode()),
-                        err -> LOG.debugf("Shutdown DELETE for %s failed: %s", entry.getKey(), err.getMessage())
-                    );
+    public Uni<Void> shutdown() {
+        return Uni.createFrom().item(() -> {
+            for (Map.Entry<String, Uni<McpSession>> entry : sessions.entrySet()) {
+                try {
+                    McpSession session = entry.getValue()
+                        .await().atMost(java.time.Duration.ofMillis(100));
+                    if (session != null && session.hasSessionId()) {
+                        ResolvedMcpServer server = serverResolver.serverByName(entry.getKey());
+                        HttpRequest<Buffer> request = webClient.requestAbs(HttpMethod.DELETE, server.url());
+                        request.putHeader("Mcp-Session-Id", session.sessionId());
+                        request.send().subscribe().with(
+                            resp -> LOG.debugf("Shutdown DELETE for %s: %d", entry.getKey(), resp.statusCode()),
+                            err -> LOG.debugf("Shutdown DELETE for %s failed: %s", entry.getKey(), err.getMessage())
+                        );
+                    }
+                } catch (Exception e) {
+                    LOG.debugf("Skipping shutdown for %s: %s", entry.getKey(), e.getMessage());
                 }
-            } catch (Exception e) {
-                LOG.debugf("Skipping shutdown for %s: %s", entry.getKey(), e.getMessage());
             }
-        }
+            return null;
+        }).replaceWithVoid();
     }
 
     private Uni<McpSession> performInitialization(String serverName) {

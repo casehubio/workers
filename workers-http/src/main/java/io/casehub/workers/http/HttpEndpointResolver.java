@@ -2,10 +2,7 @@ package io.casehub.workers.http;
 
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
-import io.quarkus.runtime.StartupEvent;
-import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -18,8 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import static jakarta.interceptor.Interceptor.Priority.APPLICATION;
 
 @ApplicationScoped
 public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEndpoint> {
@@ -34,10 +29,6 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
     int defaultTimeoutSeconds;
 
     private final Map<String, ResolvedEndpoint> resolvedEndpoints = new HashMap<>();
-
-    void onStartup(@Observes @Priority(APPLICATION) StartupEvent ev) {
-        initialize();
-    }
 
     /**
      * CDI startup entry point — gathers injected fields and delegates.

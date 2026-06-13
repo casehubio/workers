@@ -65,6 +65,9 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `FaultCallbackEvent` | CDI async event fired by `WorkerCallbackResource` on faulted REST callback |
 | `CompletionExpiredEvent` | CDI async event fired by `AsyncWorkerCompletionRegistry.expireStale()` |
 | `CasehubWorkerHeaders` | Header name constants shared across all worker types |
+| `WorkerRuntime` | Lifecycle SPI — `initialize()`, `shutdown()`, `capabilities()`, `status()`. All worker types implement this. Orchestrator discovers beans via CDI |
+| `WorkerRuntimeStatus` | `PENDING` → `RUNNING` → `STOPPED`, `PENDING` → `FAULTED` → `STOPPED`, `FAULTED` → `RUNNING` (recovery). Aligned with SW 1.0 vocabulary |
+| `WorkerLifecycleOrchestrator` | `@ApplicationScoped` — discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
 
 ## workers-camel Key Types
 
@@ -76,6 +79,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `CamelWorkerFaultEventHandler` | `@ConsumeEvent(CAMEL_WORKER_FAULT, blocking=true)` — persists failure, counts retries, re-dispatches or exhausts |
 | `CamelCompletionExpiryObserver` | `@ObservesAsync CompletionExpiredEvent` — filters on `WORKER_TYPE`, routes to fault publisher |
 | `CamelFaultCallbackObserver` | `@ObservesAsync FaultCallbackEvent` — filters on `WORKER_TYPE`, routes to fault publisher |
+| `CamelWorkerRuntime` | `WorkerRuntime` implementation — delegates to `CamelCapabilityResolver.initialize()` |
 
 ## workers-http Key Types
 
@@ -89,6 +93,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `HttpWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `HTTP_WORKER_FAULT` |
 | `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — uses `WorkerRetrySupport`, `PermanentFaultException` (4xx) and `RetryAfterException` (429) from workers-common |
 | `ExchangeMode` | `SYNC` (default) or `ASYNC` |
+| `HttpWorkerRuntime` | `WorkerRuntime` implementation — delegates to `HttpEndpointResolver.initialize()` |
 
 ## workers-github-actions Key Types
 
@@ -101,6 +106,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `GitHubActionsWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `GITHUB_ACTIONS_WORKER_FAULT` |
 | `GitHubActionsWorkerFaultEventHandler` | `@ConsumeEvent(GITHUB_ACTIONS_WORKER_FAULT, blocking=true)` — 422 on workflow-dispatch retryable (60s), 422 on repository-dispatch permanent |
 | `GitHubActionsReactiveWorkerProvisioner` | Capability probe — validates tags and token availability |
+| `GitHubActionsWorkerRuntime` | `WorkerRuntime` implementation — validates token config; FAULTED if no token, supports FAULTED → RUNNING recovery |
 
 ## workers-mcp Key Types
 
@@ -108,13 +114,15 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 |------|---------|
 | `McpWorkerConstants.WORKER_TYPE = "mcp"` | workerType discriminator |
 | `McpWorkerEventBusAddresses.MCP_WORKER_FAULT` | Separate fault address from HTTP, Camel, and GitHub Actions |
-| `McpServerResolver` | Config-based server registry — N:1 capability tag mapping (`mcp:<server>:<tool>` → `ResolvedMcpServer`) |
-| `McpSessionManager` | `@ApplicationScoped` — MCP session lifecycle: lazy init with concurrent dedup via memoized Uni, session caching, `@PreDestroy` cleanup |
+| `McpServerResolver` | Config + discovery server registry — N:1 capability tag mapping (`mcp:<server>:<tool>` → `ResolvedMcpServer`). `discovery=auto` (default) calls `tools/list`; `discovery=manual` is config-only. `registerDiscoveredTools()` merges discovered tools with config allowlist |
+| `McpSessionManager` | `@ApplicationScoped` — MCP session lifecycle: eager init at startup (pre-warmed by `McpWorkerRuntime`), concurrent dedup via memoized Uni, session caching, shutdown via `McpWorkerRuntime.shutdown()` |
 | `McpSession` | Per-server runtime state — `sessionId`, `protocolVersion`, `AtomicLong requestIdCounter` |
 | `McpWorkerExecutionManager` | Dispatches `tools/call` via Vert.x WebClient — dual response parsing (JSON + SSE), `structuredContent` preferred |
 | `McpWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `MCP_WORKER_FAULT` |
 | `McpWorkerFaultEventHandler` | `@ConsumeEvent(MCP_WORKER_FAULT, blocking=true)` — `isError: true` retryable, malformed retryable, 404-with-session retryable (re-initializes) |
 | `McpReactiveWorkerProvisioner` | Capability probe — validates tag in resolved set, server URL non-blank |
+| `McpWorkerRuntime` | `WorkerRuntime` implementation — parallel server init via `Uni.join().all()` with per-server error isolation (`ServerInitResult`), `tools/list` discovery, eager session pre-warming, delegated shutdown |
+| `ServerInitResult` | Per-server init outcome record — success (session + discovered tools) or failure (error). Enables partial-failure handling |
 
 ## Key Rules
 
@@ -140,6 +148,13 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - MCP session initialization uses `ConcurrentHashMap.computeIfAbsent` + `Uni.memoize().indefinitely()` — `onFailure().invoke(remove)` BEFORE `memoize()` (GE-20260609-78dc3a).
 - MCP protocol version: `2025-06-18` only. No backwards compatibility with `2024-11-05` HTTP+SSE transport.
 - MCP required headers: `Accept: application/json, text/event-stream`, `MCP-Protocol-Version`, `Mcp-Session-Id` (when assigned).
+- MCP discovery mode: `discovery=auto` (default) calls `tools/list` at startup; `discovery=manual` is config-only (v1 behaviour).
+- MCP `tools` config property is an allowlist when `discovery=auto` — config tools are always registered; discovered tools not in config are ignored. Config tools not found in `tools/list` trigger a warning but are kept (trust the operator).
+- MCP session initialization is eager at startup (shift from v1 lazy model) — `McpWorkerRuntime.initialize()` pre-warms the session cache. Lazy infrastructure (`getOrInitialize()`) stays for dispatch-time re-init after 404.
+- MCP per-server initialization is parallel within the runtime (`Uni.join().all()` with `ServerInitResult` error isolation). Partial failure: RUNNING if at least one server succeeds.
+- Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
+- Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
+- FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
 
 ## Co-deployment Constraints
 

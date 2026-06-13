@@ -35,7 +35,7 @@ public class GitHubActionsReactiveWorkerProvisioner implements ReactiveWorkerPro
     }
 
     @Override
-    public Uni<Void> terminate(String workerId) {
+    public Uni<Void> terminate(String workerId, String tenancyId) {
         return Uni.createFrom().voidItem();
     }
 

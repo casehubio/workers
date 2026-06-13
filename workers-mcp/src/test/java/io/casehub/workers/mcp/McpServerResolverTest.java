@@ -17,7 +17,7 @@ class McpServerResolverTest {
     void singleServerWithTwoTools_buildsTwoCapabilities() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -32,8 +32,8 @@ class McpServerResolverTest {
     void multipleServers_combinedCapabilities() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of()),
-            new ServerConfig("jira", "https://jira.internal/mcp", "create-issue,search", 60, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto"),
+            new ServerConfig("jira", "https://jira.internal/mcp", "create-issue,search", 60, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -49,7 +49,7 @@ class McpServerResolverTest {
     void resolveWithValidTag_returnsCorrectServer() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of("Authorization", "Bearer xxx"))
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of("Authorization", "Bearer xxx"), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -66,7 +66,7 @@ class McpServerResolverTest {
     void multipleTagsToSameServer_returnsSameInstance() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -80,7 +80,7 @@ class McpServerResolverTest {
     void resolveWithUnknownServer_throws() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -94,7 +94,7 @@ class McpServerResolverTest {
     void resolveWithKnownServerButUnlistedTool_throws() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -108,7 +108,7 @@ class McpServerResolverTest {
     void timeoutFallsBackToGlobalDefault() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", -1, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", -1, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 45);
@@ -121,7 +121,7 @@ class McpServerResolverTest {
     void noHeaders_emptyMap() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -134,7 +134,7 @@ class McpServerResolverTest {
     void blankUrl_throwsAtStartup() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "", "send-message", 30, Map.of())
+            new ServerConfig("slack", "", "send-message", 30, Map.of(), "auto")
         );
 
         assertThatThrownBy(() -> resolver.initialize(servers, 30))
@@ -146,7 +146,7 @@ class McpServerResolverTest {
     void toolsParsing_trimsWhitespace() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", " send-message , list-channels ", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", " send-message , list-channels ", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -161,7 +161,7 @@ class McpServerResolverTest {
     void toolsParsing_ignoresEmptyEntries() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,,list-channels,", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,,list-channels,", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -176,7 +176,7 @@ class McpServerResolverTest {
     void toolsParsing_duplicateToolNames_throws() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,send-message", 30, Map.of(), "auto")
         );
 
         assertThatThrownBy(() -> resolver.initialize(servers, 30))
@@ -189,7 +189,7 @@ class McpServerResolverTest {
     void emptyTools_noCapabilities() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -201,7 +201,7 @@ class McpServerResolverTest {
     void firstMatch_findsMatch() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -214,7 +214,7 @@ class McpServerResolverTest {
     void firstMatch_noMatch_returnsEmpty() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -237,7 +237,7 @@ class McpServerResolverTest {
     void serverByName_returnsCorrectServer() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -251,7 +251,7 @@ class McpServerResolverTest {
     void serverByName_unknownServer_throws() {
         McpServerResolver resolver = new McpServerResolver();
         List<ServerConfig> servers = List.of(
-            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of())
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
         );
 
         resolver.initialize(servers, 30);
@@ -259,5 +259,98 @@ class McpServerResolverTest {
         assertThatThrownBy(() -> resolver.serverByName("jira"))
             .isInstanceOf(WorkerProvisioningException.class)
             .hasMessageContaining("jira");
+    }
+
+    @Test
+    void registerDiscoveredTools_fullDiscovery_registersAllTools() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of(), "auto")
+        );
+        resolver.initialize(servers, 30);
+
+        resolver.registerDiscoveredTools("slack", Set.of("send-message", "list-channels"));
+
+        assertThat(resolver.capabilities()).containsExactlyInAnyOrder(
+            "mcp:slack:send-message",
+            "mcp:slack:list-channels"
+        );
+    }
+
+    @Test
+    void registerDiscoveredTools_withAllowlist_registersOnlyConfigTools() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "auto")
+        );
+        resolver.initialize(servers, 30);
+
+        resolver.registerDiscoveredTools("slack", Set.of("send-message", "list-channels", "delete-message"));
+
+        assertThat(resolver.capabilities()).containsExactlyInAnyOrder(
+            "mcp:slack:send-message"
+        );
+    }
+
+    @Test
+    void registerDiscoveredTools_allowlistToolNotInDiscovery_keptWithWarning() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message,custom-tool", 30, Map.of(), "auto")
+        );
+        resolver.initialize(servers, 30);
+
+        resolver.registerDiscoveredTools("slack", Set.of("send-message"));
+
+        assertThat(resolver.capabilities()).containsExactlyInAnyOrder(
+            "mcp:slack:send-message",
+            "mcp:slack:custom-tool"
+        );
+    }
+
+    @Test
+    void registerDiscoveredTools_rebuildsTags() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of(), "auto")
+        );
+        resolver.initialize(servers, 30);
+        assertThat(resolver.capabilities()).isEmpty();
+
+        resolver.registerDiscoveredTools("slack", Set.of("send-message"));
+
+        ResolvedMcpServer resolved = resolver.resolve("mcp:slack:send-message");
+        assertThat(resolved.name()).isEqualTo("slack");
+        assertThat(resolved.tools()).contains("send-message");
+    }
+
+    @Test
+    void isDiscoveryEnabled_autoMode_returnsTrue() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of(), "auto")
+        );
+        resolver.initialize(servers, 30);
+        assertThat(resolver.isDiscoveryEnabled("slack")).isTrue();
+    }
+
+    @Test
+    void isDiscoveryEnabled_manualMode_returnsFalse() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "send-message", 30, Map.of(), "manual")
+        );
+        resolver.initialize(servers, 30);
+        assertThat(resolver.isDiscoveryEnabled("slack")).isFalse();
+    }
+
+    @Test
+    void isDiscoveryEnabled_defaultMode_returnsTrue() {
+        McpServerResolver resolver = new McpServerResolver();
+        List<ServerConfig> servers = List.of(
+            new ServerConfig("slack", "https://slack.internal/mcp", "", 30, Map.of(), "")
+        );
+        resolver.initialize(servers, 30);
+        assertThat(resolver.isDiscoveryEnabled("slack")).isTrue();
     }
 }

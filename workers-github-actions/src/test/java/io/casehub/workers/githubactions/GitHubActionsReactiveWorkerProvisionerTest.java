@@ -75,6 +75,6 @@ class GitHubActionsReactiveWorkerProvisionerTest {
 
     @Test
     void terminate_returnsVoid() {
-        assertThat(provisioner.terminate("any").await().indefinitely()).isNull();
+        assertThat(provisioner.terminate("any", "tenant-1").await().indefinitely()).isNull();
     }
 }

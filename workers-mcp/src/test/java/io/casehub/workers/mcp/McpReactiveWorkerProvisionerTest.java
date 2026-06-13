@@ -22,7 +22,7 @@ class McpReactiveWorkerProvisionerTest {
     void setUp() {
         resolver = new McpServerResolver();
         resolver.initialize(List.of(
-            new McpServerResolver.ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of())
+            new McpServerResolver.ServerConfig("slack", "https://slack.internal/mcp", "send-message,list-channels", 30, Map.of(), "auto")
         ), 30);
 
         provisioner = new McpReactiveWorkerProvisioner();
@@ -53,6 +53,6 @@ class McpReactiveWorkerProvisionerTest {
 
     @Test
     void terminate_returnsVoid() {
-        assertThat(provisioner.terminate("any").await().indefinitely()).isNull();
+        assertThat(provisioner.terminate("any", "tenant-1").await().indefinitely()).isNull();
     }
 }

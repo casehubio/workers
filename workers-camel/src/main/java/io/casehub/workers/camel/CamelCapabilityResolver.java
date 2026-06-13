@@ -2,10 +2,7 @@ package io.casehub.workers.camel;
 
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
-import io.quarkus.runtime.StartupEvent;
-import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -16,8 +13,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import static jakarta.interceptor.Interceptor.Priority.APPLICATION;
 
 @ApplicationScoped
 public class CamelCapabilityResolver implements WorkerCapabilityResolver<String> {
@@ -33,10 +28,6 @@ public class CamelCapabilityResolver implements WorkerCapabilityResolver<String>
 
     private final Map<String, String> resolvedRoutes = new HashMap<>();
     private final Map<String, ExchangePattern> exchangePatterns = new HashMap<>();
-
-    void onStartup(@Observes @Priority(APPLICATION) StartupEvent ev) {
-        initialize();
-    }
 
     void initialize() {
         resolvedRoutes.clear();

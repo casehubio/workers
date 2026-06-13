@@ -2,13 +2,11 @@ package io.casehub.workers.mcp;
 
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
-import io.quarkus.runtime.StartupEvent;
-import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,12 +16,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static jakarta.interceptor.Interceptor.Priority.APPLICATION;
-
 @ApplicationScoped
 public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpServer> {
 
-    record ServerConfig(String name, String url, String tools, int timeoutSeconds, Map<String, String> headers) {}
+    private static final Logger LOG = Logger.getLogger(McpServerResolver.class);
+
+    record ServerConfig(String name, String url, String tools, int timeoutSeconds, Map<String, String> headers, String discovery) {}
 
     @Inject
     Config config;
@@ -33,8 +31,15 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
 
     private final Map<String, ResolvedMcpServer> serversByName = new HashMap<>();
     private final Map<String, String> capabilityToServerName = new HashMap<>();
+    private final Map<String, ServerConfig> configByName = new HashMap<>();
 
-    void onStartup(@Observes @Priority(APPLICATION) StartupEvent ev) {
+    /**
+     * Loads server configuration from MicroProfile Config and initializes
+     * the resolver. Called by {@code McpWorkerRuntime.initialize()} instead
+     * of a CDI startup observer — this allows the runtime to control
+     * initialization order.
+     */
+    void initializeFromConfig() {
         List<ServerConfig> servers = loadFromConfig();
         initialize(servers, defaultTimeoutSeconds);
     }
@@ -46,9 +51,11 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
     void initialize(List<ServerConfig> servers, int defaultTimeout) {
         serversByName.clear();
         capabilityToServerName.clear();
+        configByName.clear();
 
         for (ServerConfig config : servers) {
             validateServerConfig(config);
+            configByName.put(config.name(), config);
 
             int timeout = config.timeoutSeconds() == -1 ? defaultTimeout : config.timeoutSeconds();
             Set<String> tools = parseTools(config.tools(), config.name());
@@ -101,6 +108,73 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
             throw new WorkerProvisioningException("No MCP server found with name: " + name);
         }
         return server;
+    }
+
+    /**
+     * Returns whether discovery mode is enabled for the given server.
+     * Returns true if discovery is null, blank, or "auto".
+     * Returns false if discovery is "manual".
+     */
+    boolean isDiscoveryEnabled(String serverName) {
+        ServerConfig config = configByName.get(serverName);
+        if (config == null) return false;
+        String mode = config.discovery();
+        return mode == null || mode.isBlank() || "auto".equalsIgnoreCase(mode);
+    }
+
+    /**
+     * Returns the list of configured server names.
+     */
+    List<String> serverNames() {
+        return List.copyOf(serversByName.keySet());
+    }
+
+    /**
+     * Registers discovered tools for the given server.
+     * If no tools are configured, registers all discovered tools.
+     * If tools are configured, only registers the configured subset (allowlist).
+     * Warns if a configured tool is not in the discovery response.
+     */
+    void registerDiscoveredTools(String serverName, Set<String> discoveredToolNames) {
+        ResolvedMcpServer existing = serversByName.get(serverName);
+        if (existing == null) {
+            throw new WorkerProvisioningException("No MCP server found with name: " + serverName);
+        }
+
+        ServerConfig config = configByName.get(serverName);
+        Set<String> configTools = parseTools(config.tools(), serverName);
+        Set<String> finalTools;
+
+        if (configTools.isEmpty()) {
+            finalTools = Set.copyOf(discoveredToolNames);
+        } else {
+            for (String configTool : configTools) {
+                if (!discoveredToolNames.contains(configTool)) {
+                    LOG.warnf("MCP server '%s': config-declared tool '%s' not found in tools/list response",
+                        serverName, configTool);
+                }
+            }
+            finalTools = configTools;
+        }
+
+        // Remove old tags for this server
+        Set<String> oldTags = new HashSet<>();
+        capabilityToServerName.forEach((tag, name) -> {
+            if (name.equals(serverName)) oldTags.add(tag);
+        });
+        oldTags.forEach(capabilityToServerName::remove);
+
+        // Replace server with updated tools
+        ResolvedMcpServer updated = new ResolvedMcpServer(
+            existing.name(), existing.url(), existing.timeoutSeconds(),
+            existing.headers(), finalTools
+        );
+        serversByName.put(serverName, updated);
+
+        // Rebuild tags
+        for (String tool : finalTools) {
+            capabilityToServerName.put(buildCapabilityTag(serverName, tool), serverName);
+        }
     }
 
     /**
@@ -198,7 +272,8 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
         String tools = props.getOrDefault("tools", "");
         int timeout = parseTimeout(props.get("timeout-seconds"));
         Map<String, String> headers = extractHeaders(props);
-        return new ServerConfig(name, url, tools, timeout, headers);
+        String discovery = props.getOrDefault("discovery", "auto");
+        return new ServerConfig(name, url, tools, timeout, headers, discovery);
     }
 
     private int parseTimeout(String value) {
