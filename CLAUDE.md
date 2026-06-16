@@ -33,6 +33,7 @@ mvn --batch-mode deploy -DskipTests
 | `workers-camel` | `casehub-workers-camel` | `io.casehub.workers.camel` | Apache Camel worker — 300+ connectors |
 | `workers-github-actions` | `casehub-workers-github-actions` | `io.casehub.workers.githubactions` | GitHub Actions worker — workflow_dispatch + repository_dispatch |
 | `workers-mcp` | `casehub-workers-mcp` | `io.casehub.workers.mcp` | MCP worker — dispatch case steps to MCP server tools via Streamable HTTP |
+| `workers-script` | `casehub-workers-script` | `io.casehub.workers.script` | Script worker — dispatch case steps to local subprocesses (shell, Python, JS) |
 | `workers-testing` | `casehub-workers-testing` | `io.casehub.workers.testing` | Shared test fixtures — **test scope only, never compile/runtime** |
 
 Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each root package.
@@ -54,7 +55,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 
 | Type | Purpose |
 |------|---------|
-| `PendingCompletion` | Registry entry per async dispatch — carries `dispatchId`, `workerType`, `callbackToken`, `capability`, `eventLogId` |
+| `PendingCompletion` | Registry entry per async dispatch — carries `dispatchId`, `workerType`, `faultAddress`, `callbackToken`, `capability`, `eventLogId`. Self-routing: `faultAddress` enables generic observers without per-module filtering |
 | `WorkerCorrelationContext` | Per-dispatch context — `CaseInstance`, `Worker`, `idempotency`, `tenancyId` |
 | `AsyncWorkerCompletionRegistry` | In-memory pending completion store; `expireStale()` fires `CompletionExpiredEvent` CDI async |
 | `WorkflowCompletionPublisher` | Fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` via `eventBus.publish()` |
@@ -68,6 +69,10 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `WorkerRuntime` | Lifecycle SPI — `initialize()`, `shutdown()`, `capabilities()`, `status()`. All worker types implement this. Orchestrator discovers beans via CDI |
 | `WorkerRuntimeStatus` | `PENDING` → `RUNNING` → `STOPPED`, `PENDING` → `FAULTED` → `STOPPED`, `FAULTED` → `RUNNING` (recovery). Aligned with SW 1.0 vocabulary |
 | `WorkerLifecycleOrchestrator` | `@ApplicationScoped` — discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
+| `WorkerFaultPublisher` | Generic fault publisher — parameterized by fault address. Two overloads: `fault(faultAddress, ctx, capability, eventLogId, cause)` and `fault(pending, cause)`. Replaces all per-module fault publishers |
+| `WorkerFaultHandler` | Shared fault handler body — persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Always uses `emitOn(workerPool)` before re-dispatch. Per-module fault event handlers are 5-line stubs delegating here |
+| `WorkerCompletionExpiryObserver` | Generic `@ObservesAsync CompletionExpiredEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module expiry observers |
+| `WorkerFaultCallbackObserver` | Generic `@ObservesAsync FaultCallbackEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module callback observers |
 
 ## workers-camel Key Types
 
@@ -75,10 +80,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 |------|---------|
 | `CamelWorkerConstants.WORKER_TYPE = "camel"` | workerType discriminator — passed to `register()`, used by CDI observers to filter events |
 | `CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT` | Separate fault address from Quartz's `WORKFLOW_EXECUTION_FAILED` |
-| `CamelWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `CAMEL_WORKER_FAULT` |
-| `CamelWorkerFaultEventHandler` | `@ConsumeEvent(CAMEL_WORKER_FAULT, blocking=true)` — persists failure, counts retries, re-dispatches or exhausts |
-| `CamelCompletionExpiryObserver` | `@ObservesAsync CompletionExpiredEvent` — filters on `WORKER_TYPE`, routes to fault publisher |
-| `CamelFaultCallbackObserver` | `@ObservesAsync FaultCallbackEvent` — filters on `WORKER_TYPE`, routes to fault publisher |
+| `CamelWorkerFaultEventHandler` | `@ConsumeEvent(CAMEL_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `CamelWorkerRuntime` | `WorkerRuntime` implementation — delegates to `CamelCapabilityResolver.initialize()` |
 
 ## workers-http Key Types
@@ -90,8 +92,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `HttpWorkerRoute` | SPI interface for Tier 1 endpoint registration |
 | `HttpEndpointResolver` | 3-tier capability tag → `ResolvedEndpoint` resolution (SPI bean > config > EndpointRegistry) |
 | `HttpWorkerExecutionManager` | Sync/async dispatch via Vert.x WebClient — reactive-native, no `emitOn` needed |
-| `HttpWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `HTTP_WORKER_FAULT` |
-| `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — uses `WorkerRetrySupport`, `PermanentFaultException` (4xx) and `RetryAfterException` (429) from workers-common |
+| `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `ExchangeMode` | `SYNC` (default) or `ASYNC` |
 | `HttpWorkerRuntime` | `WorkerRuntime` implementation — delegates to `HttpEndpointResolver.initialize()` |
 
@@ -103,8 +104,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT` | Separate fault address from HTTP and Camel |
 | `GitHubActionsTokenResolver` | Per-org + global PAT resolution from config properties |
 | `GitHubActionsWorkerExecutionManager` | Dispatches via Vert.x WebClient — fire-and-forget on 204 |
-| `GitHubActionsWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `GITHUB_ACTIONS_WORKER_FAULT` |
-| `GitHubActionsWorkerFaultEventHandler` | `@ConsumeEvent(GITHUB_ACTIONS_WORKER_FAULT, blocking=true)` — 422 on workflow-dispatch retryable (60s), 422 on repository-dispatch permanent |
+| `GitHubActionsWorkerFaultEventHandler` | `@ConsumeEvent(GITHUB_ACTIONS_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `GitHubActionsReactiveWorkerProvisioner` | Capability probe — validates tags and token availability |
 | `GitHubActionsWorkerRuntime` | `WorkerRuntime` implementation — validates token config; FAULTED if no token, supports FAULTED → RUNNING recovery |
 
@@ -118,11 +118,23 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `McpSessionManager` | `@ApplicationScoped` — MCP session lifecycle: eager init at startup (pre-warmed by `McpWorkerRuntime`), concurrent dedup via memoized Uni, session caching, shutdown via `McpWorkerRuntime.shutdown()` |
 | `McpSession` | Per-server runtime state — `sessionId`, `protocolVersion`, `AtomicLong requestIdCounter` |
 | `McpWorkerExecutionManager` | Dispatches `tools/call` via Vert.x WebClient — dual response parsing (JSON + SSE), `structuredContent` preferred |
-| `McpWorkerFaultPublisher` | Fires `WorkflowExecutionFailed` on `MCP_WORKER_FAULT` |
-| `McpWorkerFaultEventHandler` | `@ConsumeEvent(MCP_WORKER_FAULT, blocking=true)` — `isError: true` retryable, malformed retryable, 404-with-session retryable (re-initializes) |
+| `McpWorkerFaultEventHandler` | `@ConsumeEvent(MCP_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `McpReactiveWorkerProvisioner` | Capability probe — validates tag in resolved set, server URL non-blank |
 | `McpWorkerRuntime` | `WorkerRuntime` implementation — parallel server init via `Uni.join().all()` with per-server error isolation (`ServerInitResult`), `tools/list` discovery, eager session pre-warming, delegated shutdown |
 | `ServerInitResult` | Per-server init outcome record — success (session + discovered tools) or failure (error). Enables partial-failure handling |
+
+## workers-script Key Types
+
+| Type | Purpose |
+|------|---------|
+| `ScriptWorkerConstants.WORKER_TYPE = "script"` | workerType discriminator |
+| `ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT` | Separate fault address from HTTP, Camel, GitHub Actions, and MCP |
+| `ScriptDefinition` | Record — `name`, `command`, `args`, `workingDirectory`, `environment`, `timeoutSeconds`, `maxOutputBytes` |
+| `ScriptDefinitionResolver` | `WorkerCapabilityResolver<ScriptDefinition>` — config-driven (`casehub.workers.script.scripts.<name>.*`), capability tag prefix `script:` |
+| `ScriptWorkerExecutionManager` | Dispatches via `ProcessBuilder` — `runSubscriptionOn(workerPool)`, stdin JSON delivery, bounded stdout/stderr capture, exit code classification. Owns dedicated `ExecutorService` for stream draining (`@PostConstruct`/`@PreDestroy` lifecycle) |
+| `ScriptWorkerFaultEventHandler` | `@ConsumeEvent(SCRIPT_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
+| `ScriptReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver, command non-blank |
+| `ScriptWorkerRuntime` | `WorkerRuntime` implementation — delegates to `ScriptDefinitionResolver.initialize()`. Zero scripts → FAULTED |
 
 ## Key Rules
 
@@ -131,17 +143,15 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
 - Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
-- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
-- Every CDI event observer MUST filter by `pending.workerType()` — required when two worker modules are co-deployed.
-- Camel retry uses `emitOn(Infrastructure.getDefaultWorkerPool())` after Vert.x timer — `ProducerTemplate` is blocking.
-- HTTP retry does NOT use `emitOn` — `WebClient` is event-loop native, no thread hop needed.
+- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
+- Fault pipeline is centralized in workers-common: `WorkerFaultPublisher` (parameterized by address), `WorkerFaultHandler` (shared retry body), `WorkerCompletionExpiryObserver` and `WorkerFaultCallbackObserver` (generic, route via `faultAddress` from `PendingCompletion`). Per-module fault handlers are 5-line stubs.
+- `WorkerFaultHandler` always uses `emitOn(Infrastructure.getDefaultWorkerPool())` before re-dispatch — correct for all workers regardless of whether their `submit()` is blocking or reactive. One unnecessary thread hop for reactive workers is negligible on the error path.
 - Retry logic via `WorkerRetrySupport`: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED).
 - HTTP 4xx (except 429) throws `PermanentFaultException` — skips retry immediately.
 - HTTP 429 with `Retry-After` header throws `RetryAfterException` — overrides configured backoff delay.
-- GitHub Actions retry does NOT use `emitOn` — `WebClient` is event-loop native (same as HTTP).
 - GitHub Actions 422 on `workflow-dispatch` throws `RetryAfterException(60_000)` — workflow_dispatch trigger caching (GE-20260426-805acb). 422 on `repository-dispatch` throws `PermanentFaultException` — malformed request.
 - GitHub Actions `ref` is required for `workflow-dispatch` — GitHub API rejects requests without it.
-- MCP retry does NOT use `emitOn` — `WebClient` is event-loop native (same as HTTP and GitHub Actions).
+- MCP dispatch is event-loop native via WebClient — no thread hop needed in execution manager.
 - MCP `isError: true` is retryable (not permanent) — MCP spec's own example is "API rate limit exceeded."
 - MCP malformed responses are retryable — load balancer HTML pages, proxy timeouts are transient.
 - MCP 404 with active `Mcp-Session-Id` → session expired, retryable (re-initializes). 404 without session → `PermanentFaultException` (endpoint not found).
@@ -152,6 +162,12 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - MCP `tools` config property is an allowlist when `discovery=auto` — config tools are always registered; discovered tools not in config are ignored. Config tools not found in `tools/list` trigger a warning but are kept (trust the operator).
 - MCP session initialization is eager at startup (shift from v1 lazy model) — `McpWorkerRuntime.initialize()` pre-warms the session cache. Lazy infrastructure (`getOrInitialize()`) stays for dispatch-time re-init after 404.
 - MCP per-server initialization is parallel within the runtime (`Uni.join().all()` with `ServerInitResult` error isolation). Partial failure: RUNNING if at least one server succeeds.
+- Script execution uses `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())` — same as Camel's blocking `ProducerTemplate`. Entire ProcessBuilder lifecycle runs on the worker pool.
+- Script stdin delivers `inputData` as JSON. Env vars provide dispatch context: `CASEHUB_CASE_ID`, `CASEHUB_TENANCY_ID`, `CASEHUB_CAPABILITY`, `CASEHUB_IDEMPOTENCY`.
+- Script stdout parsing: JSON object → structured output map; JSON array, primitive, or invalid JSON → raw wrapper `{stdout, stderr, exitCode}`.
+- Script timeout → `PermanentFaultException` (diverges from HTTP/MCP where timeout is retryable). Rationale: subprocess that burned full timeout will timeout again; each retry wastes OS process + thread for full duration.
+- Script non-zero exit → `RuntimeException` (retryable). Command not found or working directory missing → `PermanentFaultException`.
+- Script stream draining: bounded read loop (8KB chunks, cap at `maxOutputBytes`, drain past cap to prevent SIGPIPE). Dedicated `ExecutorService` for stream draining — `@PostConstruct`/`@PreDestroy` lifecycle on execution manager.
 - Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
@@ -162,6 +178,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - `workers-camel` + `workers-http` → `workerType` discriminator in `PendingCompletion` prevents double CDI event handling. `WorkerExecutionManager` CDI ambiguity still applies — same composite manager needed.
 - `workers-github-actions` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType` discriminator prevents event cross-talk.
 - `workers-mcp` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType = "mcp"` discriminator prevents event cross-talk.
+- `workers-script` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType = "script"` discriminator prevents event cross-talk.
 
 ## Cross-Repo Dependencies
 

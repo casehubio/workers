@@ -24,6 +24,7 @@
         <module>workers-camel</module>
         <module>workers-github-actions</module>
         <module>workers-mcp</module>
+        <module>workers-script</module>
         <module>workers-testing</module>
     </modules>
 
