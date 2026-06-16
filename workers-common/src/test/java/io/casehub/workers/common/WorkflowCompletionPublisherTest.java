@@ -25,7 +25,7 @@ class WorkflowCompletionPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = new Worker("w1", List.of(new Capability("cap", "", "")), (ctx) -> null);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
         Map<String, Object> output = Map.of("result", "ok");
 

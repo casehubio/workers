@@ -28,7 +28,7 @@ public final class WorkerTestSupport {
         List<Capability> caps = java.util.Arrays.stream(capabilityTags)
             .map(tag -> new Capability(tag, "", ""))
             .toList();
-        return new Worker(name, caps, (ctx) -> null);
+        return Worker.builder().name(name).capabilities(caps).function(ctx -> null).build();
     }
 
     public static Capability testCapability(String tag) {

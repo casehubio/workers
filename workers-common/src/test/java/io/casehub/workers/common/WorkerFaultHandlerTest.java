@@ -183,7 +183,7 @@ class WorkerFaultHandlerTest {
     }
 
     private static Worker testWorker(String name) {
-        return new Worker(name, List.of(), (ctx) -> null);
+        return Worker.builder().name(name).capabilities(List.of()).function(ctx -> null).build();
     }
 
     private static Capability testCapability(String tag) {

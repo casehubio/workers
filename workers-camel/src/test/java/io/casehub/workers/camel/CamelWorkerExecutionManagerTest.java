@@ -73,6 +73,6 @@ class CamelWorkerExecutionManagerTest {
     }
 
     private Worker testWorker() {
-        return new Worker("w1", List.of(new Capability("cap", "", "")), (ctx) -> null);
+        return Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
     }
 }

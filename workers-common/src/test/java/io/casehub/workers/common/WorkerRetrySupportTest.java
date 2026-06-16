@@ -65,7 +65,7 @@ class WorkerRetrySupportTest {
         @Test
         void workerWithDefaultExecutionPolicy_returnsItsRetryPolicy() {
             // Worker's default ExecutionPolicy() has new RetryPolicy() — should return it
-            Worker worker = new Worker("w1", List.of(), (ctx) -> null);
+            Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(ctx -> null).build();
             // default ExecutionPolicy sets retries = new RetryPolicy()
             RetryPolicy result = WorkerRetrySupport.resolveRetryPolicy(worker);
 
@@ -162,7 +162,7 @@ class WorkerRetrySupportTest {
         @Test
         void constructsCorrectEventLogAndCallsAppend() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = new Worker("send-email", List.of(), (ctx) -> null);
+            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(ctx -> null).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -186,7 +186,7 @@ class WorkerRetrySupportTest {
         @Test
         void nullErrorMessage_usesUnknown() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = new Worker("send-email", List.of(), (ctx) -> null);
+            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(ctx -> null).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -280,7 +280,11 @@ class WorkerRetrySupportTest {
     // ── Helpers ──
 
     private static Worker testWorker(ExecutionPolicy policy) {
-        Worker worker = new Worker("test-worker", List.of(new Capability("cap", "", "")), (ctx) -> null);
+        Worker worker = Worker.builder()
+            .name("test-worker")
+            .capabilities(List.of(new Capability("cap", "", "")))
+            .function(ctx -> null)
+            .build();
         if (policy != null) {
             worker.setExecutionPolicy(policy);
         } else {

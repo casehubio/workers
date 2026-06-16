@@ -47,7 +47,7 @@ class CasehubProducerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = new Worker("w1", List.of(new Capability("cap", "", "")), (ctx) -> null);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
         testPending = new PendingCompletion(
             "test-dispatch-id",

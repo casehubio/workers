@@ -23,7 +23,7 @@ class ScriptWorkerFaultEventHandlerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = new Worker("w1", List.of(), (ctx) -> null);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(ctx -> null).build();
         Capability capability = new Capability("script:test", "", "");
 
         WorkflowExecutionFailed event = new WorkflowExecutionFailed(
