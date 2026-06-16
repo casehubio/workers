@@ -31,8 +31,8 @@ class AsyncWorkerCompletionRegistryTest {
     @Test
     void register_generatesUniqueDispatchIdAndCallbackToken() {
         WorkerCorrelationContext ctx = testContext();
-        PendingCompletion p1 = registry.register("camel", ctx, testCapability(), 1L, Duration.ofMinutes(60), Map.of());
-        PendingCompletion p2 = registry.register("camel", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
+        PendingCompletion p1 = registry.register("camel", "test.fault", ctx, testCapability(), 1L, Duration.ofMinutes(60), Map.of());
+        PendingCompletion p2 = registry.register("camel", "test.fault", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
         assertThat(p1.dispatchId()).isNotEqualTo(p2.dispatchId());
         assertThat(p1.callbackToken()).isNotEqualTo(p2.callbackToken());
         assertThat(p1.workerType()).isEqualTo("camel");
@@ -40,7 +40,7 @@ class AsyncWorkerCompletionRegistryTest {
 
     @Test
     void complete_returnsAndRemoves() {
-        PendingCompletion pending = registry.register("camel", testContext(), testCapability(), 1L, Duration.ofMinutes(60), Map.of());
+        PendingCompletion pending = registry.register("camel", "test.fault", testContext(), testCapability(), 1L, Duration.ofMinutes(60), Map.of());
         Optional<PendingCompletion> completed = registry.complete(pending.dispatchId());
         assertThat(completed).isPresent().contains(pending);
         Optional<PendingCompletion> second = registry.complete(pending.dispatchId());
@@ -55,16 +55,16 @@ class AsyncWorkerCompletionRegistryTest {
     @Test
     void countByWorkerName_countsActiveDispatches() {
         WorkerCorrelationContext ctx = testContext();
-        registry.register("camel", ctx, testCapability(), 1L, Duration.ofMinutes(60), Map.of());
-        registry.register("camel", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
+        registry.register("camel", "test.fault", ctx, testCapability(), 1L, Duration.ofMinutes(60), Map.of());
+        registry.register("camel", "test.fault", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
         assertThat(registry.countByWorkerName(ctx.worker().getName())).isEqualTo(2);
     }
 
     @Test
     void expireStale_firesEventForExpiredEntries() {
         WorkerCorrelationContext ctx = testContext();
-        registry.register("camel", ctx, testCapability(), 1L, Duration.ofSeconds(-1), Map.of());
-        PendingCompletion live = registry.register("camel", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
+        registry.register("camel", "test.fault", ctx, testCapability(), 1L, Duration.ofSeconds(-1), Map.of());
+        PendingCompletion live = registry.register("camel", "test.fault", ctx, testCapability(), 2L, Duration.ofMinutes(60), Map.of());
         registry.expireStale();
         assertThat(firedEvents).hasSize(1);
         assertThat(firedEvents.get(0).pending().eventLogId()).isEqualTo(1L);

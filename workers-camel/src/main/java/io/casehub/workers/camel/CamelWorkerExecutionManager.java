@@ -10,6 +10,7 @@ import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.CasehubWorkerHeaders;
 import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.smallrye.mutiny.Uni;
@@ -30,7 +31,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
     private static final Logger LOG = Logger.getLogger(CamelWorkerExecutionManager.class);
 
     @Inject CamelCapabilityResolver camelCapabilityResolver;
-    @Inject CamelWorkerFaultPublisher camelWorkerFaultPublisher;
+    @Inject WorkerFaultPublisher faultPublisher;
     @Inject AsyncWorkerCompletionRegistry asyncWorkerCompletionRegistry;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject ProducerTemplate producerTemplate;
@@ -46,7 +47,8 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
             entryUri = camelCapabilityResolver.resolve(capability.getName());
         } catch (WorkerProvisioningException e) {
             LOG.errorf("Camel route for capability %s missing at dispatch time", capability.getName());
-            camelWorkerFaultPublisher.fault(
+            faultPublisher.fault(
+                CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
                 new WorkerCorrelationContext(instance, worker,
                     WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.getName(),
                         capability.getName(), inputData), instance.tenancyId),
@@ -82,7 +84,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                 boolean faulted = response.getException() != null
                     || "FAULTED".equals(response.getIn().getHeader(CasehubWorkerHeaders.WORK_STATUS));
                 if (faulted) {
-                    camelWorkerFaultPublisher.fault(ctx, capability, eventLogId, response.getException());
+                    faultPublisher.fault(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT, ctx, capability, eventLogId, response.getException());
                 } else {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> output = response.getIn().getBody(Map.class);
@@ -91,7 +93,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                 return Uni.createFrom().voidItem();
             })
             .onFailure().recoverWithUni(t -> {
-                camelWorkerFaultPublisher.fault(ctx, capability, eventLogId, t);
+                faultPublisher.fault(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT, ctx, capability, eventLogId, t);
                 return Uni.createFrom().voidItem();
             });
     }
@@ -100,7 +102,9 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                                    Capability capability, Long eventLogId,
                                    Map<String, Object> inputData) {
         PendingCompletion pending = asyncWorkerCompletionRegistry.register(
-            CamelWorkerConstants.WORKER_TYPE, ctx, capability, eventLogId,
+            CamelWorkerConstants.WORKER_TYPE,
+            CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
+            ctx, capability, eventLogId,
             Duration.ofMinutes(asyncTimeoutMinutes), Map.of());
 
         return Uni.createFrom()

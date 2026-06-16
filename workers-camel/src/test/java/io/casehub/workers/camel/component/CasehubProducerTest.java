@@ -7,12 +7,13 @@ import static org.mockito.Mockito.*;
 import io.casehub.api.model.Capability;
 import io.casehub.api.model.Worker;
 import io.casehub.engine.common.internal.model.CaseInstance;
-import io.casehub.workers.camel.CamelWorkerFaultPublisher;
+import io.casehub.workers.camel.CamelWorkerEventBusAddresses;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.CasehubWorkerHeaders;
 import io.casehub.workers.common.CompletionExpiredEvent;
 import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,14 +34,14 @@ class CasehubProducerTest {
     private CasehubProducer producer;
     private AsyncWorkerCompletionRegistry registry;
     private WorkflowCompletionPublisher completionPublisher;
-    private CamelWorkerFaultPublisher faultPublisher;
+    private WorkerFaultPublisher faultPublisher;
     private PendingCompletion testPending;
 
     @BeforeEach
     void setUp() {
         registry = mock(AsyncWorkerCompletionRegistry.class);
         completionPublisher = mock(WorkflowCompletionPublisher.class);
-        faultPublisher = mock(CamelWorkerFaultPublisher.class);
+        faultPublisher = mock(WorkerFaultPublisher.class);
 
         // Create test pending completion
         CaseInstance instance = new CaseInstance();
@@ -51,6 +52,7 @@ class CasehubProducerTest {
         testPending = new PendingCompletion(
             "test-dispatch-id",
             "camel",
+            CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
             ctx,
             UUID.randomUUID().toString(),
             new Capability("cap", "", ""),

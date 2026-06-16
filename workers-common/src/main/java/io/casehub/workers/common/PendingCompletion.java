@@ -7,6 +7,7 @@ import java.util.Map;
 public record PendingCompletion(
     String dispatchId,
     String workerType,
+    String faultAddress,
     WorkerCorrelationContext correlationContext,
     String callbackToken,
     Capability capability,

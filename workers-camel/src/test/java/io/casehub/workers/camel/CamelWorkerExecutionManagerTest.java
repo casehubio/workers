@@ -9,6 +9,7 @@ import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import java.util.List;
@@ -22,18 +23,18 @@ class CamelWorkerExecutionManagerTest {
 
     private CamelWorkerExecutionManager manager;
     private CamelCapabilityResolver resolver;
-    private CamelWorkerFaultPublisher faultPublisher;
+    private WorkerFaultPublisher faultPublisher;
     private AsyncWorkerCompletionRegistry registry;
 
     @BeforeEach
     void setUp() {
         resolver = mock(CamelCapabilityResolver.class);
-        faultPublisher = mock(CamelWorkerFaultPublisher.class);
+        faultPublisher = mock(WorkerFaultPublisher.class);
         registry = mock(AsyncWorkerCompletionRegistry.class);
 
         manager = new CamelWorkerExecutionManager();
         manager.camelCapabilityResolver = resolver;
-        manager.camelWorkerFaultPublisher = faultPublisher;
+        manager.faultPublisher = faultPublisher;
         manager.asyncWorkerCompletionRegistry = registry;
         manager.completionPublisher = mock(WorkflowCompletionPublisher.class);
         manager.producerTemplate = mock(ProducerTemplate.class);
@@ -49,7 +50,8 @@ class CamelWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
-        verify(faultPublisher).fault(any(WorkerCorrelationContext.class), eq(cap), eq(1L), any(WorkerProvisioningException.class));
+        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+            any(WorkerCorrelationContext.class), eq(cap), eq(1L), any(WorkerProvisioningException.class));
     }
 
     @Test

@@ -1,18 +1,16 @@
-package io.casehub.workers.camel;
+package io.casehub.workers.common;
 
-import io.casehub.workers.common.FaultCallbackEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.ObservesAsync;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
-public class CamelFaultCallbackObserver {
+public class WorkerFaultCallbackObserver {
 
     @Inject
-    CamelWorkerFaultPublisher faultPublisher;
+    WorkerFaultPublisher faultPublisher;
 
     void onFaultCallback(@ObservesAsync FaultCallbackEvent event) {
-        if (!CamelWorkerConstants.WORKER_TYPE.equals(event.pending().workerType())) return;
         faultPublisher.fault(event.pending(), event.cause());
     }
 }

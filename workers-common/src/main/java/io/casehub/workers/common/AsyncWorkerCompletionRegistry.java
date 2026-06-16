@@ -21,13 +21,15 @@ public class AsyncWorkerCompletionRegistry {
 
     private final ConcurrentHashMap<String, PendingCompletion> pending = new ConcurrentHashMap<>();
 
-    public PendingCompletion register(String workerType, WorkerCorrelationContext ctx,
+    public PendingCompletion register(String workerType, String faultAddress,
+                                      WorkerCorrelationContext ctx,
                                       Capability capability, Long eventLogId,
                                       Duration ttl, Map<String, String> provisionerMeta) {
         Instant now = Instant.now();
         PendingCompletion entry = new PendingCompletion(
             UUID.randomUUID().toString(),
             workerType,
+            faultAddress,
             ctx,
             UUID.randomUUID().toString(),
             capability,

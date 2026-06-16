@@ -15,6 +15,7 @@ import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerProvisioningException;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerRetrySupport;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.smallrye.mutiny.Uni;
@@ -43,7 +44,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
     private static final Pattern URI_TEMPLATE_PATTERN = Pattern.compile("\\{(\\w+)\\}");
 
     @Inject HttpEndpointResolver httpEndpointResolver;
-    @Inject HttpWorkerFaultPublisher httpWorkerFaultPublisher;
+    @Inject WorkerFaultPublisher faultPublisher;
     @Inject AsyncWorkerCompletionRegistry asyncWorkerCompletionRegistry;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject io.vertx.mutiny.core.Vertx vertx;
@@ -67,7 +68,8 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
             endpoint = httpEndpointResolver.resolve(capability.getName());
         } catch (WorkerProvisioningException e) {
             LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.getName());
-            httpWorkerFaultPublisher.fault(
+            faultPublisher.fault(
+                HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
                 new WorkerCorrelationContext(instance, worker,
                     WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.getName(),
                         capability.getName(), inputData), instance.tenancyId),
@@ -84,7 +86,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         try {
             resolvedUrl = interpolateUrl(endpoint.url(), inputData);
         } catch (PermanentFaultException e) {
-            httpWorkerFaultPublisher.fault(ctx, capability, eventLogId, e);
+            faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
@@ -113,7 +115,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         return request.sendJson(inputData)
             .flatMap(response -> handleResponse(ctx, response))
             .onFailure().recoverWithUni(t -> {
-                httpWorkerFaultPublisher.fault(ctx, capability, eventLogId, t);
+                faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
                 return Uni.createFrom().voidItem();
             });
     }
@@ -122,7 +124,9 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
                                    String resolvedUrl, Capability capability,
                                    Map<String, Object> inputData, Long eventLogId) {
         PendingCompletion pending = asyncWorkerCompletionRegistry.register(
-            HttpWorkerConstants.WORKER_TYPE, ctx, capability, eventLogId,
+            HttpWorkerConstants.WORKER_TYPE,
+            HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
+            ctx, capability, eventLogId,
             Duration.ofMinutes(asyncTimeoutMinutes), Map.of());
 
         HttpRequest<Buffer> request = webClient.requestAbs(
@@ -163,7 +167,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
                 throw new RuntimeException(status + " " + response.statusMessage());
             })
             .onFailure().recoverWithUni(t -> {
-                httpWorkerFaultPublisher.fault(ctx, capability, eventLogId, t);
+                faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
                 return Uni.createFrom().voidItem();
             });
     }

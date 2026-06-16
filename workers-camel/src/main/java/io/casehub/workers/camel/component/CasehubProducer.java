@@ -1,9 +1,9 @@
 package io.casehub.workers.camel.component;
 
-import io.casehub.workers.camel.CamelWorkerFaultPublisher;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.CasehubWorkerHeaders;
 import io.casehub.workers.common.PendingCompletion;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import org.apache.camel.Exchange;
 import org.apache.camel.support.DefaultProducer;
@@ -17,12 +17,12 @@ public class CasehubProducer extends DefaultProducer {
 
     private final AsyncWorkerCompletionRegistry registry;
     private final WorkflowCompletionPublisher completionPublisher;
-    private final CamelWorkerFaultPublisher faultPublisher;
+    private final WorkerFaultPublisher faultPublisher;
 
     public CasehubProducer(CasehubEndpoint endpoint,
                            AsyncWorkerCompletionRegistry registry,
                            WorkflowCompletionPublisher completionPublisher,
-                           CamelWorkerFaultPublisher faultPublisher) {
+                           WorkerFaultPublisher faultPublisher) {
         super(endpoint);
         this.registry = registry;
         this.completionPublisher = completionPublisher;

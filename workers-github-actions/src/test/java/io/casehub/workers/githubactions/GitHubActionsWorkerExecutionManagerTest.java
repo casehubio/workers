@@ -10,6 +10,7 @@ import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.casehub.workers.testing.WorkerTestSupport;
 import io.smallrye.mutiny.Uni;
@@ -29,7 +30,7 @@ class GitHubActionsWorkerExecutionManagerTest {
 
     private GitHubActionsWorkerExecutionManager manager;
     private GitHubActionsTokenResolver tokenResolver;
-    private GitHubActionsWorkerFaultPublisher faultPublisher;
+    private WorkerFaultPublisher faultPublisher;
     private WorkflowCompletionPublisher completionPublisher;
     private WebClient webClient;
     private HttpRequest<Buffer> request;
@@ -37,7 +38,7 @@ class GitHubActionsWorkerExecutionManagerTest {
     @BeforeEach
     void setUp() {
         tokenResolver = mock(GitHubActionsTokenResolver.class);
-        faultPublisher = mock(GitHubActionsWorkerFaultPublisher.class);
+        faultPublisher = mock(WorkerFaultPublisher.class);
         completionPublisher = mock(WorkflowCompletionPublisher.class);
         webClient = mock(WebClient.class);
         request = mock(HttpRequest.class);
@@ -77,7 +78,7 @@ class GitHubActionsWorkerExecutionManagerTest {
             .containsEntry("dispatched", true)
             .containsEntry("owner", "casehubio")
             .containsEntry("repo", "devtown");
-        verify(faultPublisher, never()).fault(any(), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(anyString(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -253,7 +254,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -270,7 +272,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -287,7 +290,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -308,7 +312,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(RetryAfterException.class);
         assertThat(((RetryAfterException) causeCaptor.getValue()).retryAfterMs()).isEqualTo(60000L);
     }
@@ -330,7 +335,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -352,7 +358,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(RetryAfterException.class);
         assertThat(((RetryAfterException) causeCaptor.getValue()).retryAfterMs()).isEqualTo(30000L);
     }
@@ -374,7 +381,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
         assertThat(((PermanentFaultException) causeCaptor.getValue()).statusCode()).isEqualTo(403);
     }
@@ -396,7 +404,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -417,7 +426,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -438,7 +448,8 @@ class GitHubActionsWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isNotInstanceOf(PermanentFaultException.class)
             .isNotInstanceOf(RetryAfterException.class);

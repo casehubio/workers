@@ -87,6 +87,6 @@ class WorkerCallbackResourceTest {
         instance.tenancyId = "t1";
         Worker worker = new Worker("w1", List.of(new Capability("cap", "", "")), (ctx) -> null);
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
-        return registry.register("camel", ctx, new Capability("cap", "", ""), 1L, Duration.ofMinutes(60), Map.of());
+        return registry.register("camel", "test.fault", ctx, new Capability("cap", "", ""), 1L, Duration.ofMinutes(60), Map.of());
     }
 }

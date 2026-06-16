@@ -12,6 +12,7 @@ import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerRetrySupport;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.smallrye.mutiny.Uni;
@@ -45,7 +46,7 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
 
     @Inject McpServerResolver serverResolver;
     @Inject McpSessionManager sessionManager;
-    @Inject McpWorkerFaultPublisher faultPublisher;
+    @Inject WorkerFaultPublisher faultPublisher;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject io.vertx.mutiny.core.Vertx vertx;
 
@@ -68,7 +69,8 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
         try {
             server = serverResolver.resolve(capTag);
         } catch (Exception e) {
-            faultPublisher.fault(buildCtx(instance, worker, capability, inputData),
+            faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT,
+                buildCtx(instance, worker, capability, inputData),
                 capability, eventLogId,
                 new PermanentFaultException(0, e.getMessage()));
             return Uni.createFrom().voidItem();
@@ -120,7 +122,7 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
                     });
             })
             .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(ctx, capability, eventLogId, t);
+                faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT, ctx, capability, eventLogId, t);
                 return Uni.createFrom().voidItem();
             });
     }

@@ -1,18 +1,16 @@
-package io.casehub.workers.http;
+package io.casehub.workers.common;
 
-import io.casehub.workers.common.CompletionExpiredEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.ObservesAsync;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
-public class HttpCompletionExpiryObserver {
+public class WorkerCompletionExpiryObserver {
 
     @Inject
-    HttpWorkerFaultPublisher faultPublisher;
+    WorkerFaultPublisher faultPublisher;
 
     void onExpiry(@ObservesAsync CompletionExpiredEvent event) {
-        if (!HttpWorkerConstants.WORKER_TYPE.equals(event.pending().workerType())) return;
         faultPublisher.fault(event.pending(),
             new RuntimeException("Async timeout — no completion received within TTL"));
     }

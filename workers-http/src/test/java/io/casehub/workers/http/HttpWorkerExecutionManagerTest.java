@@ -14,6 +14,7 @@ import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.casehub.workers.testing.WorkerTestSupport;
@@ -35,7 +36,7 @@ class HttpWorkerExecutionManagerTest {
 
     private HttpWorkerExecutionManager manager;
     private HttpEndpointResolver httpEndpointResolver;
-    private HttpWorkerFaultPublisher httpWorkerFaultPublisher;
+    private WorkerFaultPublisher faultPublisher;
     private AsyncWorkerCompletionRegistry asyncWorkerCompletionRegistry;
     private WorkflowCompletionPublisher completionPublisher;
     private WebClient webClient;
@@ -49,7 +50,7 @@ class HttpWorkerExecutionManagerTest {
     @BeforeEach
     void setUp() {
         httpEndpointResolver = mock(HttpEndpointResolver.class);
-        httpWorkerFaultPublisher = mock(HttpWorkerFaultPublisher.class);
+        faultPublisher = mock(WorkerFaultPublisher.class);
         asyncWorkerCompletionRegistry = mock(AsyncWorkerCompletionRegistry.class);
         completionPublisher = mock(WorkflowCompletionPublisher.class);
         webClient = mock(WebClient.class);
@@ -57,7 +58,7 @@ class HttpWorkerExecutionManagerTest {
 
         manager = new HttpWorkerExecutionManager();
         manager.httpEndpointResolver = httpEndpointResolver;
-        manager.httpWorkerFaultPublisher = httpWorkerFaultPublisher;
+        manager.faultPublisher = faultPublisher;
         manager.asyncWorkerCompletionRegistry = asyncWorkerCompletionRegistry;
         manager.completionPublisher = completionPublisher;
         manager.objectMapper = new ObjectMapper();
@@ -86,8 +87,8 @@ class HttpWorkerExecutionManagerTest {
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
         assertThat(outputCaptor.getValue()).containsEntry("result", "ok");
-        verify(httpWorkerFaultPublisher, never()).fault(
-            any(WorkerCorrelationContext.class), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(
+            anyString(), any(WorkerCorrelationContext.class), any(), anyLong(), any());
     }
 
     @Test
@@ -139,7 +140,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
         assertThat(((PermanentFaultException) causeCaptor.getValue()).statusCode()).isEqualTo(400);
@@ -158,7 +160,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
         assertThat(((PermanentFaultException) causeCaptor.getValue()).statusCode()).isEqualTo(404);
@@ -180,7 +183,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(RetryAfterException.class);
         assertThat(((RetryAfterException) causeCaptor.getValue()).retryAfterMs()).isEqualTo(30000);
@@ -200,7 +204,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isInstanceOf(RuntimeException.class)
@@ -222,7 +227,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isInstanceOf(RuntimeException.class)
@@ -287,18 +293,22 @@ class HttpWorkerExecutionManagerTest {
 
         PendingCompletion pending = stubPendingCompletion(instance, worker, cap);
         when(asyncWorkerCompletionRegistry.register(
-            eq(HttpWorkerConstants.WORKER_TYPE), any(WorkerCorrelationContext.class),
+            eq(HttpWorkerConstants.WORKER_TYPE),
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
+            any(WorkerCorrelationContext.class),
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
         manager.submit(1L, instance, worker, cap, Map.of("key", "val")).await().indefinitely();
 
         verify(asyncWorkerCompletionRegistry).register(
-            eq(HttpWorkerConstants.WORKER_TYPE), any(WorkerCorrelationContext.class),
+            eq(HttpWorkerConstants.WORKER_TYPE),
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
+            any(WorkerCorrelationContext.class),
             eq(cap), eq(1L), any(Duration.class), eq(Map.of()));
         verify(completionPublisher, never()).complete(any(), any());
-        verify(httpWorkerFaultPublisher, never()).fault(
-            any(WorkerCorrelationContext.class), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(
+            anyString(), any(WorkerCorrelationContext.class), any(), anyLong(), any());
     }
 
     @Test
@@ -313,14 +323,17 @@ class HttpWorkerExecutionManagerTest {
 
         PendingCompletion pending = stubPendingCompletion(instance, worker, cap);
         when(asyncWorkerCompletionRegistry.register(
-            eq(HttpWorkerConstants.WORKER_TYPE), any(WorkerCorrelationContext.class),
+            eq(HttpWorkerConstants.WORKER_TYPE),
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
+            any(WorkerCorrelationContext.class),
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isInstanceOf(RuntimeException.class)
@@ -339,7 +352,9 @@ class HttpWorkerExecutionManagerTest {
 
         PendingCompletion pending = stubPendingCompletion(instance, worker, cap);
         when(asyncWorkerCompletionRegistry.register(
-            eq(HttpWorkerConstants.WORKER_TYPE), any(WorkerCorrelationContext.class),
+            eq(HttpWorkerConstants.WORKER_TYPE),
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
+            any(WorkerCorrelationContext.class),
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
@@ -387,7 +402,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isInstanceOf(PermanentFaultException.class)
@@ -437,7 +453,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(java.net.ConnectException.class);
         verify(completionPublisher, never()).complete(any(), any());
@@ -456,7 +473,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(java.util.concurrent.TimeoutException.class);
         verify(completionPublisher, never()).complete(any(), any());
@@ -476,10 +494,11 @@ class HttpWorkerExecutionManagerTest {
 
         PendingCompletion pending = new PendingCompletion(
             "dispatch-123", HttpWorkerConstants.WORKER_TYPE,
+            HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
             new WorkerCorrelationContext(instance, worker, "idem", instance.tenancyId),
             "token", cap, 1L, Instant.now(),
             Instant.now().plusSeconds(60), Map.of());
-        when(asyncWorkerCompletionRegistry.register(anyString(), any(), any(), any(), any(), any()))
+        when(asyncWorkerCompletionRegistry.register(eq(HttpWorkerConstants.WORKER_TYPE), eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT), any(WorkerCorrelationContext.class), any(Capability.class), any(), any(), any()))
             .thenReturn(pending);
 
         HttpResponse<Buffer> response = mockResponse(429, "Too Many Requests", "");
@@ -489,7 +508,8 @@ class HttpWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(RetryAfterException.class);
         RetryAfterException ra = (RetryAfterException) causeCaptor.getValue();
@@ -509,7 +529,8 @@ class HttpWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 
-        verify(httpWorkerFaultPublisher).fault(
+        verify(faultPublisher).fault(
+            eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L),
             any(WorkerProvisioningException.class));
         verify(completionPublisher, never()).complete(any(), any());
@@ -521,8 +542,9 @@ class HttpWorkerExecutionManagerTest {
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(
             instance, worker, "test-idempotency", instance.tenancyId);
         return new PendingCompletion(
-            "dispatch-123", HttpWorkerConstants.WORKER_TYPE, ctx,
-            "callback-token-abc", cap, 1L,
+            "dispatch-123", HttpWorkerConstants.WORKER_TYPE,
+            HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
+            ctx, "callback-token-abc", cap, 1L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
     }
 

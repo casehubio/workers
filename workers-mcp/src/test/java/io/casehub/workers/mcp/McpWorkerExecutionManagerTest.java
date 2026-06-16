@@ -10,6 +10,7 @@ import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.casehub.workers.testing.WorkerTestSupport;
 import io.smallrye.mutiny.Uni;
@@ -29,7 +30,7 @@ class McpWorkerExecutionManagerTest {
     private McpWorkerExecutionManager manager;
     private McpServerResolver serverResolver;
     private McpSessionManager sessionManager;
-    private McpWorkerFaultPublisher faultPublisher;
+    private WorkerFaultPublisher faultPublisher;
     private WorkflowCompletionPublisher completionPublisher;
     private WebClient webClient;
     private HttpRequest<Buffer> request;
@@ -47,7 +48,7 @@ class McpWorkerExecutionManagerTest {
     void setUp() {
         serverResolver = mock(McpServerResolver.class);
         sessionManager = mock(McpSessionManager.class);
-        faultPublisher = mock(McpWorkerFaultPublisher.class);
+        faultPublisher = mock(WorkerFaultPublisher.class);
         completionPublisher = mock(WorkflowCompletionPublisher.class);
         webClient = mock(WebClient.class);
         request = mock(HttpRequest.class);
@@ -85,7 +86,7 @@ class McpWorkerExecutionManagerTest {
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
         assertThat(outputCaptor.getValue()).containsKey("content");
-        verify(faultPublisher, never()).fault(any(), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(anyString(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -112,7 +113,7 @@ class McpWorkerExecutionManagerTest {
             .containsEntry("status", "ok")
             .containsEntry("messageId", "m-123")
             .doesNotContainKey("content");
-        verify(faultPublisher, never()).fault(any(), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(anyString(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -131,7 +132,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isNotInstanceOf(PermanentFaultException.class)
             .hasMessageContaining("isError");
@@ -154,7 +156,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -174,7 +177,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isNotInstanceOf(PermanentFaultException.class)
             .isNotInstanceOf(RetryAfterException.class);
@@ -194,7 +198,8 @@ class McpWorkerExecutionManagerTest {
 
         verify(sessionManager).invalidate("slack");
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isNotInstanceOf(PermanentFaultException.class);
     }
 
@@ -215,7 +220,8 @@ class McpWorkerExecutionManagerTest {
 
         verify(sessionManager, never()).invalidate(anyString());
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
 
@@ -233,7 +239,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(RetryAfterException.class);
         assertThat(((RetryAfterException) causeCaptor.getValue()).retryAfterMs()).isEqualTo(60000L);
     }
@@ -251,7 +258,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue()).isInstanceOf(PermanentFaultException.class);
         assertThat(((PermanentFaultException) causeCaptor.getValue()).statusCode()).isEqualTo(400);
     }
@@ -269,7 +277,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isNotInstanceOf(PermanentFaultException.class)
             .isNotInstanceOf(RetryAfterException.class);
@@ -289,7 +298,8 @@ class McpWorkerExecutionManagerTest {
             .await().indefinitely();
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(any(), eq(cap), eq(1L), causeCaptor.capture());
+        verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
+            any(), eq(cap), eq(1L), causeCaptor.capture());
         assertThat(causeCaptor.getValue())
             .isNotInstanceOf(PermanentFaultException.class)
             .hasMessageContaining("Malformed");
@@ -339,7 +349,7 @@ class McpWorkerExecutionManagerTest {
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
         assertThat(outputCaptor.getValue()).containsKey("content");
-        verify(faultPublisher, never()).fault(any(), any(), anyLong(), any());
+        verify(faultPublisher, never()).fault(anyString(), any(), any(), anyLong(), any());
     }
 
     @Test

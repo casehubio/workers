@@ -1,7 +1,7 @@
 package io.casehub.workers.camel.component;
 
-import io.casehub.workers.camel.CamelWorkerFaultPublisher;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import jakarta.enterprise.inject.spi.CDI;
 import org.apache.camel.Consumer;
@@ -19,7 +19,7 @@ public class CasehubEndpoint extends DefaultEndpoint {
         return new CasehubProducer(this,
             CDI.current().select(AsyncWorkerCompletionRegistry.class).get(),
             CDI.current().select(WorkflowCompletionPublisher.class).get(),
-            CDI.current().select(CamelWorkerFaultPublisher.class).get());
+            CDI.current().select(WorkerFaultPublisher.class).get());
     }
 
     @Override

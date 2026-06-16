@@ -9,6 +9,7 @@ import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
+import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerRetrySupport;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.smallrye.mutiny.Uni;
@@ -29,7 +30,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
     private static final Logger LOG = Logger.getLogger(GitHubActionsWorkerExecutionManager.class);
 
     @Inject GitHubActionsTokenResolver tokenResolver;
-    @Inject GitHubActionsWorkerFaultPublisher faultPublisher;
+    @Inject WorkerFaultPublisher faultPublisher;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject io.vertx.mutiny.core.Vertx vertx;
 
@@ -49,7 +50,8 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
         String owner = stringField(inputData, "owner");
         String repo = stringField(inputData, "repo");
         if (owner == null || repo == null) {
-            faultPublisher.fault(buildCtx(instance, worker, capability, inputData),
+            faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
+                buildCtx(instance, worker, capability, inputData),
                 capability, eventLogId,
                 new PermanentFaultException(0, "Missing required inputData: owner, repo"));
             return Uni.createFrom().voidItem();
@@ -62,7 +64,8 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
             String workflowId = stringField(inputData, "workflow_id");
             String ref = stringField(inputData, "ref");
             if (workflowId == null || ref == null) {
-                faultPublisher.fault(buildCtx(instance, worker, capability, inputData),
+                faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
+                    buildCtx(instance, worker, capability, inputData),
                     capability, eventLogId,
                     new PermanentFaultException(0,
                         "Missing required inputData for workflow-dispatch: workflow_id, ref"));
@@ -79,7 +82,8 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
         } else {
             String eventType = stringField(inputData, "event_type");
             if (eventType == null) {
-                faultPublisher.fault(buildCtx(instance, worker, capability, inputData),
+                faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
+                    buildCtx(instance, worker, capability, inputData),
                     capability, eventLogId,
                     new PermanentFaultException(0,
                         "Missing required inputData for repository-dispatch: event_type"));
@@ -98,7 +102,8 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
         try {
             token = tokenResolver.resolve(owner);
         } catch (PermanentFaultException e) {
-            faultPublisher.fault(buildCtx(instance, worker, capability, inputData),
+            faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
+                buildCtx(instance, worker, capability, inputData),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
@@ -138,7 +143,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
                 throw new RuntimeException(status + " " + response.statusMessage());
             })
             .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(ctx, capability, eventLogId, t);
+                faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT, ctx, capability, eventLogId, t);
                 return Uni.createFrom().voidItem();
             });
     }
