@@ -213,7 +213,11 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 | blog       | workspace   | staged here; published via publish-blog |
 | specs      | project     | lands in `docs/superpowers/specs/` |
 | plans      | workspace   | |
+| design     | project     | journal in workspace `design/`; merge target is project `ARC42STORIES.MD` |
 | handover   | workspace   | |
+
+Living docs — check for drift after significant changes:
+- `ARC42STORIES.MD` — primary architecture record; check §9–10 after worker module, SPI, or fault pipeline changes
 
 ## Work Tracking
 
