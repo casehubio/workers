@@ -230,7 +230,7 @@ Living docs — check for drift after significant changes:
 ## Work Tracking
 
 **Issue tracking:** enabled
-**GitHub repo:** casehubio/casehub-workers
+**GitHub repo:** casehubio/workers
 
 ## Workspace
 
