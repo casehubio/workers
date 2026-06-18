@@ -1,5 +1,10 @@
 package io.casehub.workers.mcp;
 
+import io.casehub.platform.api.endpoints.EndpointDescriptor;
+import io.casehub.platform.api.endpoints.EndpointPropertyKeys;
+import io.casehub.platform.api.endpoints.EndpointProtocol;
+import io.casehub.platform.api.endpoints.EndpointRegistry;
+import io.casehub.platform.api.path.Path;
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,12 +31,16 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
     @Inject
     Config config;
 
+    @Inject
+    EndpointRegistry endpointRegistry;
+
     @ConfigProperty(name = "casehub.workers.mcp.default-timeout-seconds", defaultValue = "30")
     int defaultTimeoutSeconds;
 
     private final Map<String, ResolvedMcpServer> serversByName = new HashMap<>();
     private final Map<String, String> capabilityToServerName = new HashMap<>();
     private final Map<String, ServerConfig> configByName = new HashMap<>();
+    private EndpointRegistry registry;
 
     /**
      * Loads server configuration from MicroProfile Config and initializes
@@ -41,17 +50,25 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
      */
     void initializeFromConfig() {
         List<ServerConfig> servers = loadFromConfig();
-        initialize(servers, defaultTimeoutSeconds);
+        initialize(servers, defaultTimeoutSeconds, endpointRegistry);
     }
 
     /**
-     * Test-friendly initializer. Accepts all inputs explicitly so tests
-     * can call without CDI.
+     * Test-friendly initializer — backward compat for tests that don't need registry.
      */
     void initialize(List<ServerConfig> servers, int defaultTimeout) {
+        initialize(servers, defaultTimeout, null);
+    }
+
+    /**
+     * Test-friendly initializer with registry support.
+     */
+    void initialize(List<ServerConfig> servers, int defaultTimeout, EndpointRegistry registry) {
         serversByName.clear();
         capabilityToServerName.clear();
         configByName.clear();
+        this.registry = registry;
+        this.defaultTimeoutSeconds = defaultTimeout;
 
         for (ServerConfig config : servers) {
             validateServerConfig(config);
@@ -79,19 +96,46 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
     }
 
     @Override
-    public ResolvedMcpServer resolve(String capabilityTag) {
+    public ResolvedMcpServer resolve(String capabilityTag, String tenancyId) {
         String serverName = capabilityToServerName.get(capabilityTag);
-        if (serverName == null) {
-            throw WorkerProvisioningException.noRouteFound(capabilityTag);
+        if (serverName != null) {
+            return serversByName.get(serverName);
         }
-        return serversByName.get(serverName);
+        // Tier 3: EndpointRegistry
+        if (registry != null) {
+            String parsedServer = parseServerName(capabilityTag);
+            if (!parsedServer.isEmpty()) {
+                ResolvedMcpServer fromRegistry = resolveFromRegistry(parsedServer, tenancyId);
+                if (fromRegistry != null) {
+                    return fromRegistry;
+                }
+            }
+        }
+        throw WorkerProvisioningException.noRouteFound(capabilityTag);
     }
 
     @Override
-    public Optional<String> firstMatch(Set<String> capabilities) {
-        return capabilities.stream()
+    public Optional<String> firstMatch(Set<String> capabilities, String tenancyId) {
+        Optional<String> staticMatch = capabilities.stream()
             .filter(capabilityToServerName::containsKey)
             .findFirst();
+        if (staticMatch.isPresent()) {
+            return staticMatch;
+        }
+        // Probe registry — server existence is a match (tool validation deferred to dispatch)
+        if (registry != null) {
+            for (String cap : capabilities) {
+                String parsedServer = parseServerName(cap);
+                if (!parsedServer.isEmpty()) {
+                    Optional<EndpointDescriptor> descriptor =
+                        registry.resolve(Path.of("mcp", parsedServer), tenancyId);
+                    if (descriptor.isPresent() && descriptor.get().protocol() == EndpointProtocol.MCP) {
+                        return Optional.of(cap);
+                    }
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -227,6 +271,31 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
         }
         return Set.copyOf(tools);
     }
+
+    // --- Tier 3: EndpointRegistry support ---
+
+    private ResolvedMcpServer resolveFromRegistry(String serverName, String tenancyId) {
+        return registry.resolve(Path.of("mcp", serverName), tenancyId)
+            .filter(d -> d.protocol() == EndpointProtocol.MCP)
+            .map(d -> buildFromDescriptor(serverName, d))
+            .orElse(null);
+    }
+
+    private ResolvedMcpServer buildFromDescriptor(String serverName, EndpointDescriptor descriptor) {
+        Map<String, String> props = descriptor.properties();
+        String url = props.get(EndpointPropertyKeys.URL);
+        if (url == null || url.isBlank()) {
+            throw new WorkerProvisioningException(
+                "EndpointRegistry descriptor for MCP server '" + serverName + "' has blank URL");
+        }
+        int timeout = parseTimeout(props.get("timeout-seconds"));
+        if (timeout == -1) timeout = defaultTimeoutSeconds;
+        Map<String, String> headers = extractHeaders(props);
+        Set<String> tools = parseTools(props.getOrDefault("tools", ""), serverName);
+        return new ResolvedMcpServer(serverName, url, timeout, headers, tools);
+    }
+
+    // --- Config loading ---
 
     /**
      * Loads config from MicroProfile Config by iterating keys with prefix

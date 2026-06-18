@@ -69,7 +69,9 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `WorkerRuntime` | Lifecycle SPI — `initialize()`, `shutdown()`, `capabilities()`, `status()`. All worker types implement this. Orchestrator discovers beans via CDI |
 | `WorkerRuntimeStatus` | `PENDING` → `RUNNING` → `STOPPED`, `PENDING` → `FAULTED` → `STOPPED`, `FAULTED` → `RUNNING` (recovery). Aligned with SW 1.0 vocabulary |
 | `WorkerLifecycleOrchestrator` | `@ApplicationScoped` — discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
-| `WorkerFaultPublisher` | Generic fault publisher — parameterized by fault address. Two overloads: `fault(faultAddress, ctx, capability, eventLogId, cause)` and `fault(pending, cause)`. Replaces all per-module fault publishers |
+| `WorkerCapabilityResolver<T>` | Tenancy-aware endpoint resolution SPI — `resolve(capabilityTag, tenancyId)`, `firstMatch(capabilities, tenancyId)`, `capabilities()`. All four worker types implement this. HTTP and MCP add EndpointRegistry as Tier 3; Camel and Script pass tenancyId through |
+| `WorkerFaultEvent` | Local fault event record — `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`. Replaces engine-common's deleted `WorkflowExecutionFailed` (GE-20260618-a50133) |
+| `WorkerFaultPublisher` | Generic fault publisher — parameterized by fault address. Publishes `WorkerFaultEvent`. Two overloads: `fault(faultAddress, ctx, capability, eventLogId, cause)` and `fault(pending, cause)` |
 | `WorkerFaultHandler` | Shared fault handler body — persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Always uses `emitOn(workerPool)` before re-dispatch. Per-module fault event handlers are 5-line stubs delegating here |
 | `WorkerCompletionExpiryObserver` | Generic `@ObservesAsync CompletionExpiredEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module expiry observers |
 | `WorkerFaultCallbackObserver` | Generic `@ObservesAsync FaultCallbackEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module callback observers |
@@ -90,7 +92,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `HttpWorkerConstants.WORKER_TYPE = "http"` | workerType discriminator |
 | `HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT` | Separate fault address from Camel and Quartz |
 | `HttpWorkerRoute` | SPI interface for Tier 1 endpoint registration |
-| `HttpEndpointResolver` | 3-tier capability tag → `ResolvedEndpoint` resolution (SPI bean > config > EndpointRegistry) |
+| `HttpEndpointResolver` | 3-tier capability tag → `ResolvedEndpoint` resolution (SPI bean > config > EndpointRegistry). Registry lookup: `Path.of("http", capabilityTag)` with tenancyId. Protocol check: `EndpointProtocol.HTTP` only |
 | `HttpWorkerExecutionManager` | Sync/async dispatch via Vert.x WebClient — reactive-native, no `emitOn` needed |
 | `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `ExchangeMode` | `SYNC` (default) or `ASYNC` |
@@ -114,7 +116,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 |------|---------|
 | `McpWorkerConstants.WORKER_TYPE = "mcp"` | workerType discriminator |
 | `McpWorkerEventBusAddresses.MCP_WORKER_FAULT` | Separate fault address from HTTP, Camel, and GitHub Actions |
-| `McpServerResolver` | Config + discovery server registry — N:1 capability tag mapping (`mcp:<server>:<tool>` → `ResolvedMcpServer`). `discovery=auto` (default) calls `tools/list`; `discovery=manual` is config-only. `registerDiscoveredTools()` merges discovered tools with config allowlist |
+| `McpServerResolver` | Config + discovery + EndpointRegistry server registry — N:1 capability tag mapping (`mcp:<server>:<tool>` → `ResolvedMcpServer`). Resolution: config > EndpointRegistry (Tier 3). Registry lookup: `Path.of("mcp", serverName)` with tenancyId. Protocol check: `EndpointProtocol.MCP` only. `firstMatch()` validates server existence — tool validation deferred to dispatch. `discovery=auto` (default) calls `tools/list`; `discovery=manual` is config-only. `registerDiscoveredTools()` merges discovered tools with config allowlist |
 | `McpSessionManager` | `@ApplicationScoped` — MCP session lifecycle: eager init at startup (pre-warmed by `McpWorkerRuntime`), concurrent dedup via memoized Uni, session caching, shutdown via `McpWorkerRuntime.shutdown()` |
 | `McpSession` | Per-server runtime state — `sessionId`, `protocolVersion`, `AtomicLong requestIdCounter` |
 | `McpWorkerExecutionManager` | Dispatches `tools/call` via Vert.x WebClient — dual response parsing (JSON + SSE), `structuredContent` preferred |
@@ -168,6 +170,10 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - Script timeout → `PermanentFaultException` (diverges from HTTP/MCP where timeout is retryable). Rationale: subprocess that burned full timeout will timeout again; each retry wastes OS process + thread for full duration.
 - Script non-zero exit → `RuntimeException` (retryable). Command not found or working directory missing → `PermanentFaultException`.
 - Script stream draining: bounded read loop (8KB chunks, cap at `maxOutputBytes`, drain past cap to prevent SIGPIPE). Dedicated `ExecutorService` for stream draining — `@PostConstruct`/`@PreDestroy` lifecycle on execution manager.
+- EndpointRegistry resolution order: Tier 1 (SPI beans) > Tier 2 (config) > Tier 3 (EndpointRegistry). Single registry call with tenancyId — registry handles tenant → platform-global fallback internally. `capabilities()` stays static (SPI + config only).
+- EndpointRegistry path convention: HTTP uses `Path.of("http", capabilityTag)`, MCP uses `Path.of("mcp", serverName)`. Protocol check on descriptors: HTTP resolver accepts `EndpointProtocol.HTTP` only, MCP accepts `EndpointProtocol.MCP` only. Wrong protocol → ignored (returns empty), not faulted.
+- MCP firstMatch() for Tier 3: validates server existence via registry lookup, not individual tool existence. Tool validation deferred to dispatch time (same lazy pattern as 404 session recovery).
+- Provisioner tenancyId: uses `TenancyConstants.PLATFORM_TENANT_ID` until engine#530 ships. Dispatch path (`submit()`) is fully tenant-aware via `CaseInstance.tenancyId`.
 - Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
@@ -185,9 +191,11 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | Dependency | Why |
 |---|---|
 | `casehub-engine-api` | `ReactiveWorkerProvisioner`, `WorkerExecutionManager`, `Worker`, `Capability`, `ExecutionPolicy`, `RetryPolicy`, `BackoffStrategy` |
-| `casehub-engine-common` | `WorkflowExecutionCompleted`, `WorkflowExecutionFailed`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
-| platform#73 | `casehub-endpoints` — `EndpointRegistry` SPI for named endpoint resolution (workers designed to work without it until it ships) |
+| `casehub-engine-common` | `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
+| `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants` — Tier 3 endpoint resolution in HTTP and MCP resolvers |
 | engine#461 | Composite `WorkerExecutionManager` — required for co-deploying HTTP + Camel + Quartz on same classpath |
+| engine#530 | Add `tenancyId` to `ProvisionContext` — provisioner probe limited to platform-global endpoints until this ships |
+| engine#531 | Remove `getCapabilities()` hard gate in `tryProvision()` — registry-only endpoints unreachable via provisioner fallback path until this ships (primary dispatch path unaffected) |
 
 ## Cross-Repo Conventions
 

@@ -67,7 +67,7 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
         // Resolve server — failure is permanent
         ResolvedMcpServer server;
         try {
-            server = serverResolver.resolve(capTag);
+            server = serverResolver.resolve(capTag, instance.tenancyId);
         } catch (Exception e) {
             faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT,
                 buildCtx(instance, worker, capability, inputData),

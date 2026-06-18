@@ -60,7 +60,7 @@ class McpWorkerExecutionManagerTest {
         manager.completionPublisher = completionPublisher;
         manager.webClient = webClient;
 
-        when(serverResolver.resolve(CAP_TAG)).thenReturn(TEST_SERVER);
+        when(serverResolver.resolve(eq(CAP_TAG), anyString())).thenReturn(TEST_SERVER);
         when(sessionManager.getOrInitialize("slack"))
             .thenReturn(Uni.createFrom().item(new McpSession("session-123", "2025-06-18")));
         when(webClient.requestAbs(any(HttpMethod.class), anyString())).thenReturn(request);
