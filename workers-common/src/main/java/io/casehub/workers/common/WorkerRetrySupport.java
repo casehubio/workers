@@ -159,8 +159,9 @@ public class WorkerRetrySupport {
      * Publishes a {@link WorkerRetriesExhaustedEvent} on the
      * {@link EventBusAddresses#WORKER_RETRIES_EXHAUSTED} address.
      */
-    public void publishRetriesExhausted(UUID caseId, String workerId, String inputDataHash) {
+    public void publishRetriesExhausted(UUID caseId, String workerId, String inputDataHash,
+                                        String bindingName, String tenancyId) {
         eventBus.publish(EventBusAddresses.WORKER_RETRIES_EXHAUSTED,
-            new WorkerRetriesExhaustedEvent(caseId, workerId, inputDataHash));
+            new WorkerRetriesExhaustedEvent(caseId, workerId, inputDataHash, bindingName, tenancyId));
     }
 }

@@ -36,7 +36,7 @@ class GitHubActionsReactiveWorkerProvisionerTest {
     @Test
     void provision_workflowDispatch_succeeds() {
         when(tokenResolver.hasToken()).thenReturn(true);
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         ProvisionResult result = provisioner.provision(
             Set.of(GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH), ctx)
             .await().indefinitely();
@@ -46,7 +46,7 @@ class GitHubActionsReactiveWorkerProvisionerTest {
     @Test
     void provision_repositoryDispatch_succeeds() {
         when(tokenResolver.hasToken()).thenReturn(true);
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         ProvisionResult result = provisioner.provision(
             Set.of(GitHubActionsWorkerConstants.CAPABILITY_REPOSITORY_DISPATCH), ctx)
             .await().indefinitely();
@@ -56,7 +56,7 @@ class GitHubActionsReactiveWorkerProvisionerTest {
     @Test
     void provision_unknownCapability_throws() {
         when(tokenResolver.hasToken()).thenReturn(true);
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         assertThatThrownBy(() -> provisioner.provision(
             Set.of("unknown-capability"), ctx).await().indefinitely())
             .isInstanceOf(WorkerProvisioningException.class);
@@ -65,7 +65,7 @@ class GitHubActionsReactiveWorkerProvisionerTest {
     @Test
     void provision_noToken_throws() {
         when(tokenResolver.hasToken()).thenReturn(false);
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         assertThatThrownBy(() -> provisioner.provision(
             Set.of(GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH), ctx)
             .await().indefinitely())

@@ -37,7 +37,7 @@ class McpReactiveWorkerProvisionerTest {
 
     @Test
     void provision_matchingCapability_succeeds() {
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         ProvisionResult result = provisioner.provision(
             Set.of("mcp:slack:send-message"), ctx).await().indefinitely();
         assertThat(result).isNotNull();
@@ -45,7 +45,7 @@ class McpReactiveWorkerProvisionerTest {
 
     @Test
     void provision_unknownCapability_throws() {
-        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "task", null, null, null, null);
+        ProvisionContext ctx = new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null);
         assertThatThrownBy(() -> provisioner.provision(
             Set.of("mcp:unknown:tool"), ctx).await().indefinitely())
             .isInstanceOf(WorkerProvisioningException.class);
