@@ -150,8 +150,12 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
                 stdin.write(inputJson);
             }
         } catch (IOException e) {
-            process.destroyForcibly();
-            throw new RuntimeException("Failed to write inputData to stdin: " + e.getMessage());
+            if (!process.isAlive()) {
+                LOG.debugf("Stdin write failed after process exited (broken pipe) — ignoring");
+            } else {
+                process.destroyForcibly();
+                throw new RuntimeException("Failed to write inputData to stdin: " + e.getMessage());
+            }
         }
 
         boolean completed;
