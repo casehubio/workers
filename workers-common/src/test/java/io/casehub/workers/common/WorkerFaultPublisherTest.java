@@ -5,7 +5,7 @@ import static org.mockito.Mockito.*;
 
 import io.casehub.api.model.Capability;
 import io.casehub.api.model.Worker;
-import io.casehub.engine.common.internal.event.WorkflowExecutionFailed;
+import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import java.time.Instant;
@@ -32,10 +32,10 @@ class WorkerFaultPublisherTest {
         publisher.fault("casehub.workers.test.fault", ctx, capability, 99L,
             new RuntimeException("boom"));
 
-        ArgumentCaptor<WorkflowExecutionFailed> captor = ArgumentCaptor.forClass(WorkflowExecutionFailed.class);
+        ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
         verify(eventBus).publish(eq("casehub.workers.test.fault"), captor.capture());
 
-        WorkflowExecutionFailed event = captor.getValue();
+        WorkerFaultEvent event = captor.getValue();
         assertThat(event.caseInstance()).isSameAs(instance);
         assertThat(event.worker()).isSameAs(worker);
         assertThat(event.capability()).isSameAs(capability);
@@ -62,10 +62,10 @@ class WorkerFaultPublisherTest {
 
         publisher.fault(pending, cause);
 
-        ArgumentCaptor<WorkflowExecutionFailed> captor = ArgumentCaptor.forClass(WorkflowExecutionFailed.class);
+        ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
         verify(eventBus).publish(eq("casehub.workers.http.fault"), captor.capture());
 
-        WorkflowExecutionFailed event = captor.getValue();
+        WorkerFaultEvent event = captor.getValue();
         assertThat(event.caseInstance()).isSameAs(instance);
         assertThat(event.worker()).isSameAs(worker);
         assertThat(event.capability()).isSameAs(capability);

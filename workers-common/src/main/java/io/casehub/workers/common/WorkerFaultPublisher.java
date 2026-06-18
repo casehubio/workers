@@ -1,7 +1,6 @@
 package io.casehub.workers.common;
 
 import io.casehub.api.model.Capability;
-import io.casehub.engine.common.internal.event.WorkflowExecutionFailed;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -14,13 +13,13 @@ public class WorkerFaultPublisher {
 
     public void fault(String faultAddress, WorkerCorrelationContext ctx,
                       Capability capability, Long eventLogId, Throwable cause) {
-        eventBus.publish(faultAddress, new WorkflowExecutionFailed(
+        eventBus.publish(faultAddress, new WorkerFaultEvent(
             ctx.caseInstance(), ctx.worker(), capability,
             ctx.idempotency(), eventLogId.toString(), cause));
     }
 
     public void fault(PendingCompletion pending, Throwable cause) {
-        eventBus.publish(pending.faultAddress(), new WorkflowExecutionFailed(
+        eventBus.publish(pending.faultAddress(), new WorkerFaultEvent(
             pending.correlationContext().caseInstance(),
             pending.correlationContext().worker(),
             pending.capability(),

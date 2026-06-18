@@ -11,7 +11,7 @@ import io.casehub.api.model.Capability;
 import io.casehub.api.model.ExecutionPolicy;
 import io.casehub.api.model.RetryPolicy;
 import io.casehub.api.model.Worker;
-import io.casehub.engine.common.internal.event.WorkflowExecutionFailed;
+import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
@@ -68,7 +68,7 @@ class WorkerFaultHandlerTest {
         Capability cap = testCapability("cap");
         PermanentFaultException cause = new PermanentFaultException(400, "Bad Request");
 
-        WorkflowExecutionFailed event = new WorkflowExecutionFailed(
+        WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause);
 
         handler.handleFault(event).await().indefinitely();
@@ -102,7 +102,7 @@ class WorkerFaultHandlerTest {
         when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any()))
             .thenReturn(Uni.createFrom().voidItem());
 
-        WorkflowExecutionFailed event = new WorkflowExecutionFailed(
+        WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause);
 
         handler.handleFault(event).await().indefinitely();
@@ -131,7 +131,7 @@ class WorkerFaultHandlerTest {
         when(retrySupport.countFailedAttempts(any(), any(), any(), any()))
             .thenReturn(Uni.createFrom().item(3L));
 
-        WorkflowExecutionFailed event = new WorkflowExecutionFailed(
+        WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause);
 
         handler.handleFault(event).await().indefinitely();
@@ -162,7 +162,7 @@ class WorkerFaultHandlerTest {
         when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any()))
             .thenReturn(Uni.createFrom().voidItem());
 
-        WorkflowExecutionFailed event = new WorkflowExecutionFailed(
+        WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause);
 
         // With a real Vertx timer, the delay of 200ms should complete

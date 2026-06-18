@@ -16,6 +16,6 @@ public class WorkflowCompletionPublisher {
     public void complete(WorkerCorrelationContext ctx, Map<String, Object> output) {
         eventBus.publish(EventBusAddresses.WORKER_EXECUTION_FINISHED,
             WorkflowExecutionCompleted.approved(
-                ctx.caseInstance(), ctx.worker(), ctx.idempotency(), output));
+                ctx.caseInstance(), ctx.worker(), ctx.idempotency(), output, null));
     }
 }

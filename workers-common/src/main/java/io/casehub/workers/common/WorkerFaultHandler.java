@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.casehub.api.model.RetryPolicy;
 import io.casehub.api.model.Worker;
-import io.casehub.engine.common.internal.event.WorkflowExecutionFailed;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
@@ -28,7 +27,7 @@ public class WorkerFaultHandler {
     @Inject Vertx vertx;
     @Inject EventLogRepository eventLogRepository;
 
-    public Uni<Void> handleFault(WorkflowExecutionFailed event) {
+    public Uni<Void> handleFault(WorkerFaultEvent event) {
         CaseInstance instance = event.caseInstance();
         Worker worker = event.worker();
         String inputDataHash = event.inputDataHash();
@@ -71,7 +70,7 @@ public class WorkerFaultHandler {
             });
     }
 
-    private Uni<Void> reloadAndResubmit(WorkflowExecutionFailed event, long delayMs) {
+    private Uni<Void> reloadAndResubmit(WorkerFaultEvent event, long delayMs) {
         return eventLogRepository
             .findById(Long.parseLong(event.eventLogId()), event.caseInstance().tenancyId)
             .flatMap(eventLog -> {
