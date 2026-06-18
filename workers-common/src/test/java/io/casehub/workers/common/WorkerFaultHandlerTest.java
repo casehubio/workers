@@ -74,8 +74,7 @@ class WorkerFaultHandlerTest {
         handler.handleFault(event).await().indefinitely();
 
         verify(retrySupport).persistFailureLog(instance, worker, "hash-1", "Bad Request", instance.tenancyId);
-        verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1",
-            "w1", instance.tenancyId);
+        verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1");
         verify(retrySupport, never()).countFailedAttempts(any(), any(), any(), any());
         verify(workerExecutionManager, never()).submit(anyLong(), any(), any(), any(), any());
     }
@@ -115,7 +114,7 @@ class WorkerFaultHandlerTest {
         assertThat(inputCaptor.getValue()).containsEntry("key", "value");
 
         // Verify publishRetriesExhausted was NOT called
-        verify(retrySupport, never()).publishRetriesExhausted(any(), any(), any(), any(), any());
+        verify(retrySupport, never()).publishRetriesExhausted(any(), any(), any());
     }
 
     @Test
@@ -137,8 +136,7 @@ class WorkerFaultHandlerTest {
 
         handler.handleFault(event).await().indefinitely();
 
-        verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1",
-            "w1", instance.tenancyId);
+        verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1");
         verify(workerExecutionManager, never()).submit(anyLong(), any(), any(), any(), any());
     }
 
@@ -172,7 +170,7 @@ class WorkerFaultHandlerTest {
 
         // Should have called submit (RetryAfter overrides configured backoff of 10000ms)
         verify(workerExecutionManager).submit(eq(42L), eq(instance), eq(worker), eq(cap), any());
-        verify(retrySupport, never()).publishRetriesExhausted(any(), any(), any(), any(), any());
+        verify(retrySupport, never()).publishRetriesExhausted(any(), any(), any());
     }
 
     // ── Helpers ──

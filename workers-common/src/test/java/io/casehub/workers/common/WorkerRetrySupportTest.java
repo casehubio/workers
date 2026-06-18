@@ -264,8 +264,7 @@ class WorkerRetrySupportTest {
             support.eventLogRepository = mock(EventLogRepository.class);
 
             UUID caseId = UUID.randomUUID();
-            support.publishRetriesExhausted(caseId, "send-email", "hash-xyz",
-                "send-email", "tenant-1");
+            support.publishRetriesExhausted(caseId, "send-email", "hash-xyz");
 
             ArgumentCaptor<WorkerRetriesExhaustedEvent> captor =
                 ArgumentCaptor.forClass(WorkerRetriesExhaustedEvent.class);
@@ -275,8 +274,6 @@ class WorkerRetrySupportTest {
             assertThat(event.caseId()).isEqualTo(caseId);
             assertThat(event.workerId()).isEqualTo("send-email");
             assertThat(event.idempotency()).isEqualTo("hash-xyz");
-            assertThat(event.bindingName()).isEqualTo("send-email");
-            assertThat(event.tenancyId()).isEqualTo("tenant-1");
         }
     }
 

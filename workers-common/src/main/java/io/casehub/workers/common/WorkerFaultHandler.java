@@ -39,8 +39,7 @@ public class WorkerFaultHandler {
             .flatMap(ignored -> {
                 if (event.cause() instanceof PermanentFaultException) {
                     retrySupport.publishRetriesExhausted(
-                        instance.getUuid(), worker.getName(), inputDataHash,
-                        worker.getName(), tenancyId);
+                        instance.getUuid(), worker.getName(), inputDataHash);
                     return Uni.createFrom().voidItem();
                 }
 
@@ -59,8 +58,7 @@ public class WorkerFaultHandler {
                             return reloadAndResubmit(event, delayMs);
                         } else {
                             retrySupport.publishRetriesExhausted(
-                                instance.getUuid(), worker.getName(), inputDataHash,
-                                worker.getName(), tenancyId);
+                                instance.getUuid(), worker.getName(), inputDataHash);
                             return Uni.createFrom().voidItem();
                         }
                     });
