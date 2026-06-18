@@ -376,7 +376,7 @@ Cases dispatch work to any of Apache Camel's 300+ connectors. The shared infrast
 **Spec:** `docs/superpowers/specs/2026-06-09-casehub-workers-http-design.md` (rev 3, 24 issues)
 
 **What this delivers**
-Cases dispatch work to any REST endpoint via HTTP POST. Three-tier endpoint resolution — SPI-registered routes, config properties, `EndpointRegistry` (when platform#73 ships). Sync and async exchange modes. URI template interpolation for path parameters. `PermanentFaultException` for 4xx; `RetryAfterException` for 429 with `Retry-After` header.
+Cases dispatch work to any REST endpoint via HTTP POST. Three-tier endpoint resolution — SPI-registered routes, config properties, `EndpointRegistry` (Tier 3 wired in #12). Sync and async exchange modes. URI template interpolation for path parameters. `PermanentFaultException` for 4xx; `RetryAfterException` for 429 with `Retry-After` header.
 
 **Accountability gaps closed**
 - No lightweight HTTP dispatch (Camel is heavyweight for simple REST calls) → L5 HTTP dispatch closes it
@@ -750,7 +750,7 @@ CDI displacement via classpath presence — `@ApplicationScoped` worker beans di
 ##### What it adds
 
 **Before:** Only Camel dispatch available — heavyweight for simple REST calls.
-**After:** `HttpWorkerExecutionManager @ApplicationScoped` dispatches via Vert.x `WebClient` (event-loop native, non-blocking). `HttpEndpointResolver` resolves capability tags through three tiers: SPI-registered `HttpWorkerRoute` beans → config properties → `EndpointRegistry` (when platform#73 ships).
+**After:** `HttpWorkerExecutionManager @ApplicationScoped` dispatches via Vert.x `WebClient` (event-loop native, non-blocking). `HttpEndpointResolver` resolves capability tags through three tiers: SPI-registered `HttpWorkerRoute` beans → config properties → `EndpointRegistry` (Tier 3 wired in #12, tenancy-aware).
 
 - **3-tier endpoint resolution** — SPI first (compile-time routes), config second (deploy-time), registry third (runtime)
 - **Sync/async exchange modes** — `ExchangeMode.SYNC` (default) returns response directly; `ASYNC` registers pending completion
@@ -1016,7 +1016,7 @@ All other architectural decisions are documented inline in §9.4 layer entries.
 | Risk | Impact | Mitigation | Status |
 |---|---|---|---|
 | Co-deployment CDI ambiguity (engine#461) | Cannot deploy HTTP + Camel + other workers together | Composite `WorkerExecutionManager` in engine | 🔲 Blocked on engine#461 |
-| `EndpointRegistry` shipped but not yet consumed (platform#73) | HTTP Tier 3 + MCP named endpoint auth not yet wired to `EndpointRegistry` | `EndpointRegistry` available; HTTP/MCP workers need classpath dep + wiring to activate Tier 3 | 🔲 Open |
+| `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe limited to platform-global until engine#530 ships | ✅ Done |
 | Upstream SNAPSHOT break | `Worker` constructor went private — `Worker.builder()` required | Fixed in tests; `WorkerTestSupport` review pending if engine-api publishes | ✅ Mitigated |
 | No subprocess sandboxing (workers-script) | Script execution runs with JVM process privileges | Acceptable for trusted operator-configured scripts; external sandboxing (containers, seccomp) is a deployment concern | Accepted risk |
 
