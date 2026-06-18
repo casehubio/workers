@@ -32,9 +32,9 @@ class HttpReactiveWorkerProvisionerTest {
             Map.of(),
             30
         );
-        when(resolver.firstMatch(Set.of("payment-api", "unknown")))
+        when(resolver.firstMatch(eq(Set.of("payment-api", "unknown")), anyString()))
             .thenReturn(Optional.of("payment-api"));
-        when(resolver.resolve("payment-api")).thenReturn(endpoint);
+        when(resolver.resolve(eq("payment-api"), anyString())).thenReturn(endpoint);
 
         ProvisionResult result = provisioner.provision(Set.of("payment-api", "unknown"), null)
             .await().indefinitely();
@@ -44,7 +44,7 @@ class HttpReactiveWorkerProvisionerTest {
 
     @Test
     void provision_noMatch_fails() {
-        when(resolver.firstMatch(any())).thenReturn(Optional.empty());
+        when(resolver.firstMatch(any(), anyString())).thenReturn(Optional.empty());
 
         try {
             provisioner.provision(Set.of("nonexistent"), null)

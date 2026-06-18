@@ -1,15 +1,29 @@
 package io.casehub.workers.http;
 
+import io.casehub.platform.api.endpoints.EndpointDescriptor;
+import io.casehub.platform.api.endpoints.EndpointQuery;
+import io.casehub.platform.api.endpoints.EndpointRegistry;
+import io.casehub.platform.api.path.Path;
 import io.casehub.workers.common.WorkerRuntimeStatus;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HttpWorkerRuntimeTest {
+
+    private static EndpointRegistry emptyRegistry() {
+        return new EndpointRegistry() {
+            @Override public void register(EndpointDescriptor endpoint) {}
+            @Override public Optional<EndpointDescriptor> resolve(Path path, String tenancyId) { return Optional.empty(); }
+            @Override public List<EndpointDescriptor> discover(EndpointQuery query) { return List.of(); }
+            @Override public void deregister(Path path, String tenancyId) {}
+        };
+    }
 
     @Test
     void initialStatus_isPending() {
@@ -47,7 +61,7 @@ class HttpWorkerRuntimeTest {
         resolver.initialize(List.of(), Map.of(
             "send-email", Map.of("url", "https://mail.example.com/send", "method", "POST"),
             "fetch-data", Map.of("url", "https://api.example.com/data", "method", "GET")
-        ), 30);
+        ), 30, emptyRegistry());
 
         HttpWorkerRuntime runtime = new HttpWorkerRuntime(resolver);
 

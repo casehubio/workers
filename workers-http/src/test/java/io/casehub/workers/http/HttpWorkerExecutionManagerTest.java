@@ -74,7 +74,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_2xx_completesWithResponseBody() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{\"result\":\"ok\"}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -93,7 +93,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_2xx_emptyBody_completesWithEmptyMap() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -110,7 +110,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_2xx_nonJsonBody_completesWithEmptyMap() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "not json");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -129,7 +129,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_400_throwsPermanentFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(400, "Bad Request", "");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -149,7 +149,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_404_throwsPermanentFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(404, "Not Found", "");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -171,7 +171,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_429_withRetryAfterSeconds() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(429, "Too Many Requests", "");
         when(response.getHeader("Retry-After")).thenReturn("30");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
@@ -192,7 +192,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_429_withoutRetryAfter() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(429, "Too Many Requests", "");
         when(response.getHeader("Retry-After")).thenReturn(null);
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
@@ -216,7 +216,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_500_throwsTransientFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(500, "Internal Server Error", "");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -241,7 +241,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_casehubHeaders_set() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -263,7 +263,7 @@ class HttpWorkerExecutionManagerTest {
         ResolvedEndpoint endpointWithOverride = new ResolvedEndpoint(
             "https://api.example.com/process", "POST", ExchangeMode.SYNC,
             Map.of("casehub-tenancy-id", "override-tenant", "X-Custom", "custom-value"), 30);
-        when(httpEndpointResolver.resolve("cap")).thenReturn(endpointWithOverride);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(endpointWithOverride);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -283,7 +283,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void async_2xx_registersAndFiresForget() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(ASYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(ASYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -313,7 +313,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void async_nonOk_firesFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(ASYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(ASYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(500, "Internal Server Error", "");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -342,7 +342,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void async_headersIncludeWorkerIdAndCallbackToken() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(ASYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(ASYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -366,7 +366,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_headersDoNotIncludeWorkerIdOrCallbackToken() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         HttpResponse<Buffer> response = mockResponse(200, "OK", "{}");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
@@ -392,7 +392,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void uriTemplate_missingKey_throwsPermanentFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(new ResolvedEndpoint(
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(new ResolvedEndpoint(
             "https://api.example.com/{missing}", "POST", ExchangeMode.SYNC, Map.of(), 30));
 
         CaseInstance instance = WorkerTestSupport.testCaseInstance();
@@ -442,7 +442,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_connectionRefused_firesFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         when(request.sendJson(any())).thenReturn(
             Uni.createFrom().failure(new java.net.ConnectException("Connection refused")));
 
@@ -462,7 +462,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void sync_connectionTimeout_firesFault() {
-        when(httpEndpointResolver.resolve("cap")).thenReturn(SYNC_ENDPOINT);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
         when(request.sendJson(any())).thenReturn(
             Uni.createFrom().failure(new java.util.concurrent.TimeoutException("Connection timed out")));
 
@@ -486,7 +486,7 @@ class HttpWorkerExecutionManagerTest {
     void async_429_retryAfterCappedToRemainingTtl() {
         ResolvedEndpoint asyncEndpoint = new ResolvedEndpoint(
             "https://api.example.com/process", "POST", ExchangeMode.ASYNC, Map.of(), 30);
-        when(httpEndpointResolver.resolve("cap")).thenReturn(asyncEndpoint);
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(asyncEndpoint);
 
         CaseInstance instance = WorkerTestSupport.testCaseInstance();
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
@@ -520,7 +520,7 @@ class HttpWorkerExecutionManagerTest {
 
     @Test
     void submit_missingRoute_firesFault() {
-        when(httpEndpointResolver.resolve("missing"))
+        when(httpEndpointResolver.resolve(eq("missing"), anyString()))
             .thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
         CaseInstance instance = WorkerTestSupport.testCaseInstance();

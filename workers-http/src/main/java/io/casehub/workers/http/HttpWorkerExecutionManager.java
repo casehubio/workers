@@ -65,7 +65,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         ResolvedEndpoint endpoint;
         try {
-            endpoint = httpEndpointResolver.resolve(capability.getName());
+            endpoint = httpEndpointResolver.resolve(capability.getName(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.getName());
             faultPublisher.fault(

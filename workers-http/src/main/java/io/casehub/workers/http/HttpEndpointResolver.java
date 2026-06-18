@@ -1,5 +1,10 @@
 package io.casehub.workers.http;
 
+import io.casehub.platform.api.endpoints.EndpointDescriptor;
+import io.casehub.platform.api.endpoints.EndpointPropertyKeys;
+import io.casehub.platform.api.endpoints.EndpointProtocol;
+import io.casehub.platform.api.endpoints.EndpointRegistry;
+import io.casehub.platform.api.path.Path;
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -25,10 +30,14 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
     @Inject
     Config config;
 
+    @Inject
+    EndpointRegistry endpointRegistry;
+
     @ConfigProperty(name = "casehub.workers.http.default-timeout-seconds", defaultValue = "30")
     int defaultTimeoutSeconds;
 
     private final Map<String, ResolvedEndpoint> resolvedEndpoints = new HashMap<>();
+    private EndpointRegistry registry;
 
     /**
      * CDI startup entry point — gathers injected fields and delegates.
@@ -39,7 +48,7 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
         if (spiRoutes != null && !spiRoutes.isUnsatisfied()) {
             routes = spiRoutes.stream().toList();
         }
-        initialize(routes, configEndpoints, defaultTimeoutSeconds);
+        initialize(routes, configEndpoints, defaultTimeoutSeconds, endpointRegistry);
     }
 
     /**
@@ -48,8 +57,11 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
      */
     void initialize(List<HttpWorkerRoute> spiRouteList,
                     Map<String, Map<String, String>> configEndpoints,
-                    int defaultTimeout) {
+                    int defaultTimeout,
+                    EndpointRegistry registry) {
         resolvedEndpoints.clear();
+        this.registry = registry;
+        this.defaultTimeoutSeconds = defaultTimeout;
 
         // Tier 1: SPI-registered HttpWorkerRoute beans (highest priority)
         for (HttpWorkerRoute route : spiRouteList) {
@@ -70,31 +82,68 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
             });
         }
 
-        // Tier 3: EndpointRegistry (platform#73) — structural placeholder.
-        // When EndpointRegistry ships, add a tier here that queries named
-        // endpoints and calls resolvedEndpoints.putIfAbsent() for each.
-        // No code yet — the type doesn't exist.
+        // Tier 3: EndpointRegistry — resolved dynamically at lookup time.
+        // resolve() and firstMatch() query the registry for tags not in the static map.
     }
 
     @Override
-    public ResolvedEndpoint resolve(String capabilityTag) {
+    public ResolvedEndpoint resolve(String capabilityTag, String tenancyId) {
         ResolvedEndpoint endpoint = resolvedEndpoints.get(capabilityTag);
-        if (endpoint == null) {
-            throw WorkerProvisioningException.noRouteFound(capabilityTag);
+        if (endpoint != null) {
+            return endpoint;
         }
-        return endpoint;
+        if (registry != null) {
+            endpoint = resolveFromRegistry(capabilityTag, tenancyId);
+            if (endpoint != null) {
+                return endpoint;
+            }
+        }
+        throw WorkerProvisioningException.noRouteFound(capabilityTag);
     }
 
     @Override
-    public Optional<String> firstMatch(Set<String> capabilities) {
-        return capabilities.stream()
+    public Optional<String> firstMatch(Set<String> capabilities, String tenancyId) {
+        Optional<String> staticMatch = capabilities.stream()
             .filter(resolvedEndpoints::containsKey)
             .findFirst();
+        if (staticMatch.isPresent()) {
+            return staticMatch;
+        }
+        if (registry != null) {
+            for (String cap : capabilities) {
+                if (resolveFromRegistry(cap, tenancyId) != null) {
+                    return Optional.of(cap);
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
     public Set<String> capabilities() {
         return Set.copyOf(resolvedEndpoints.keySet());
+    }
+
+    private ResolvedEndpoint resolveFromRegistry(String capabilityTag, String tenancyId) {
+        return registry.resolve(Path.of("http", capabilityTag), tenancyId)
+            .filter(d -> d.protocol() == EndpointProtocol.HTTP)
+            .map(this::buildFromDescriptor)
+            .orElse(null);
+    }
+
+    private ResolvedEndpoint buildFromDescriptor(EndpointDescriptor descriptor) {
+        Map<String, String> props = descriptor.properties();
+        String url = props.get(EndpointPropertyKeys.URL);
+        if (url == null || url.isBlank()) {
+            throw new WorkerProvisioningException(
+                "EndpointRegistry descriptor for " + descriptor.path().value()
+                + " has blank URL");
+        }
+        String method = props.getOrDefault("method", "POST");
+        ExchangeMode mode = parseMode(props.getOrDefault("mode", "SYNC"));
+        int timeout = parseTimeout(props.get("timeout-seconds"), defaultTimeoutSeconds);
+        Map<String, String> headers = extractHeaders(props);
+        return new ResolvedEndpoint(url, method, mode, headers, timeout);
     }
 
     private ResolvedEndpoint buildFromConfig(Map<String, String> props, int defaultTimeout) {
