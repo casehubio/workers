@@ -16,7 +16,7 @@
 
     <name>CaseHub Workers :: Parent</name>
     <description>Collection of CaseHub worker implementations — HTTP, Camel, Script, K8s Job and more</description>
-    <url>https://github.com/casehubio/casehub-workers</url>
+    <url>https://github.com/casehubio/workers</url>
 
     <modules>
         <module>workers-common</module>
@@ -146,20 +146,20 @@
         <repository>
             <id>github</id>
             <name>casehubio GitHub Packages</name>
-            <url>https://maven.pkg.github.com/casehubio/casehub-workers</url>
+            <url>https://maven.pkg.github.com/casehubio/workers</url>
         </repository>
         <snapshotRepository>
             <id>github</id>
             <name>casehubio GitHub Packages</name>
-            <url>https://maven.pkg.github.com/casehubio/casehub-workers</url>
+            <url>https://maven.pkg.github.com/casehubio/workers</url>
             <uniqueVersion>false</uniqueVersion>
         </snapshotRepository>
     </distributionManagement>
 
     <scm>
-        <connection>scm:git:https://github.com/casehubio/casehub-workers.git</connection>
-        <developerConnection>scm:git:https://github.com/casehubio/casehub-workers.git</developerConnection>
-        <url>https://github.com/casehubio/casehub-workers</url>
+        <connection>scm:git:https://github.com/casehubio/workers.git</connection>
+        <developerConnection>scm:git:https://github.com/casehubio/workers.git</developerConnection>
+        <url>https://github.com/casehubio/workers</url>
     </scm>
 
     <build>
