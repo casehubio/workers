@@ -36,7 +36,7 @@ class ScriptDefinitionResolverTest {
                 Map.of(), 300, 1_048_576)
         ));
 
-        ScriptDefinition def = resolver.resolve("script:run-tests");
+        ScriptDefinition def = resolver.resolve("script:run-tests", "tenant-1");
 
         assertThat(def.name()).isEqualTo("run-tests");
         assertThat(def.command()).isEqualTo("/bin/sh");
@@ -48,7 +48,7 @@ class ScriptDefinitionResolverTest {
         ScriptDefinitionResolver resolver = new ScriptDefinitionResolver();
         resolver.initialize(Map.of());
 
-        assertThatThrownBy(() -> resolver.resolve("script:missing"))
+        assertThatThrownBy(() -> resolver.resolve("script:missing", "tenant-1"))
             .isInstanceOf(WorkerProvisioningException.class);
     }
 
@@ -61,7 +61,7 @@ class ScriptDefinitionResolverTest {
                 List.of(), null, Map.of(), 300, 1_048_576)
         ));
 
-        assertThatThrownBy(() -> resolver.resolve("run-tests"))
+        assertThatThrownBy(() -> resolver.resolve("run-tests", "tenant-1"))
             .isInstanceOf(WorkerProvisioningException.class);
     }
 
@@ -73,7 +73,7 @@ class ScriptDefinitionResolverTest {
                 "build", "make", List.of(), null, Map.of(), 300, 1_048_576)
         ));
 
-        assertThat(resolver.firstMatch(Set.of("script:build", "script:unknown")))
+        assertThat(resolver.firstMatch(Set.of("script:build", "script:unknown"), "tenant-1"))
             .contains("script:build");
     }
 
@@ -82,7 +82,7 @@ class ScriptDefinitionResolverTest {
         ScriptDefinitionResolver resolver = new ScriptDefinitionResolver();
         resolver.initialize(Map.of());
 
-        assertThat(resolver.firstMatch(Set.of("script:unknown"))).isEmpty();
+        assertThat(resolver.firstMatch(Set.of("script:unknown"), "tenant-1")).isEmpty();
     }
 
     @Test

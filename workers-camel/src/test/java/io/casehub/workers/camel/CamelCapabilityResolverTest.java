@@ -41,30 +41,30 @@ class CamelCapabilityResolverTest {
 
     @Test
     void resolve_conventionRoute_returnsDirectUri() {
-        assertThat(resolver.resolve("send-email")).isEqualTo("direct:send-email");
+        assertThat(resolver.resolve("send-email", "tenant-1")).isEqualTo("direct:send-email");
     }
 
     @Test
     void resolve_configRoute_returnsConfiguredUri() {
-        assertThat(resolver.resolve("enrich-lead")).isEqualTo("kafka:leads?brokers=localhost:9092");
+        assertThat(resolver.resolve("enrich-lead", "tenant-1")).isEqualTo("kafka:leads?brokers=localhost:9092");
     }
 
     @Test
     void resolve_unknownCapability_throws() {
-        assertThatThrownBy(() -> resolver.resolve("nonexistent"))
+        assertThatThrownBy(() -> resolver.resolve("nonexistent", "tenant-1"))
             .isInstanceOf(WorkerProvisioningException.class);
     }
 
     @Test
     void firstMatch_returnsFirstKnown() {
-        Optional<String> match = resolver.firstMatch(Set.of("unknown", "send-email", "enrich-lead"));
+        Optional<String> match = resolver.firstMatch(Set.of("unknown", "send-email", "enrich-lead"), "tenant-1");
         assertThat(match).isPresent();
         assertThat(Set.of("send-email", "enrich-lead")).contains(match.get());
     }
 
     @Test
     void firstMatch_noneKnown_returnsEmpty() {
-        assertThat(resolver.firstMatch(Set.of("a", "b"))).isEmpty();
+        assertThat(resolver.firstMatch(Set.of("a", "b"), "tenant-1")).isEmpty();
     }
 
     @Test

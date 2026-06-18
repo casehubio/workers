@@ -46,7 +46,7 @@ class CamelWorkerExecutionManagerTest {
         CaseInstance instance = testInstance();
         Worker worker = testWorker();
         Capability cap = new Capability("missing", "", "");
-        when(resolver.resolve("missing")).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
+        when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
 

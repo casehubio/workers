@@ -43,7 +43,7 @@ public class ScriptDefinitionResolver implements WorkerCapabilityResolver<Script
     }
 
     @Override
-    public ScriptDefinition resolve(String capabilityTag) {
+    public ScriptDefinition resolve(String capabilityTag, String tenancyId) {
         if (!capabilityTag.startsWith(TAG_PREFIX)) {
             throw WorkerProvisioningException.noRouteFound(capabilityTag);
         }
@@ -56,7 +56,7 @@ public class ScriptDefinitionResolver implements WorkerCapabilityResolver<Script
     }
 
     @Override
-    public Optional<String> firstMatch(Set<String> capabilities) {
+    public Optional<String> firstMatch(Set<String> capabilities, String tenancyId) {
         return capabilities.stream()
             .filter(cap -> {
                 if (!cap.startsWith(TAG_PREFIX)) return false;

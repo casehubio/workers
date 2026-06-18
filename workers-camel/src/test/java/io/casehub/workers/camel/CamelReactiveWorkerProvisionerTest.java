@@ -24,9 +24,9 @@ class CamelReactiveWorkerProvisionerTest {
 
     @Test
     void provision_matchingCapability_returnsEmpty() {
-        when(resolver.firstMatch(Set.of("send-email", "unknown")))
+        when(resolver.firstMatch(eq(Set.of("send-email", "unknown")), anyString()))
             .thenReturn(Optional.of("send-email"));
-        when(resolver.resolve("send-email")).thenReturn("direct:send-email");
+        when(resolver.resolve(eq("send-email"), anyString())).thenReturn("direct:send-email");
 
         ProvisionResult result = provisioner.provision(Set.of("send-email", "unknown"), null)
             .await().indefinitely();
@@ -36,7 +36,7 @@ class CamelReactiveWorkerProvisionerTest {
 
     @Test
     void provision_noMatch_fails() {
-        when(resolver.firstMatch(any())).thenReturn(Optional.empty());
+        when(resolver.firstMatch(any(), anyString())).thenReturn(Optional.empty());
 
         try {
             provisioner.provision(Set.of("nonexistent"), null)

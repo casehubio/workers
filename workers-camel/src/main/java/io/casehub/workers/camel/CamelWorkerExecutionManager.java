@@ -44,7 +44,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         String entryUri;
         try {
-            entryUri = camelCapabilityResolver.resolve(capability.getName());
+            entryUri = camelCapabilityResolver.resolve(capability.getName(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             LOG.errorf("Camel route for capability %s missing at dispatch time", capability.getName());
             faultPublisher.fault(

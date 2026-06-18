@@ -64,7 +64,7 @@ public class CamelCapabilityResolver implements WorkerCapabilityResolver<String>
     }
 
     @Override
-    public String resolve(String capabilityTag) {
+    public String resolve(String capabilityTag, String tenancyId) {
         String uri = resolvedRoutes.get(capabilityTag);
         if (uri == null) {
             throw WorkerProvisioningException.noRouteFound(capabilityTag);
@@ -73,7 +73,7 @@ public class CamelCapabilityResolver implements WorkerCapabilityResolver<String>
     }
 
     @Override
-    public Optional<String> firstMatch(Set<String> capabilities) {
+    public Optional<String> firstMatch(Set<String> capabilities, String tenancyId) {
         return capabilities.stream()
             .filter(resolvedRoutes::containsKey)
             .findFirst();

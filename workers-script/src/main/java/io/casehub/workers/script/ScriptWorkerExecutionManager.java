@@ -70,7 +70,7 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         ScriptDefinition definition;
         try {
-            definition = scriptDefinitionResolver.resolve(capability.getName());
+            definition = scriptDefinitionResolver.resolve(capability.getName(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
             faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
