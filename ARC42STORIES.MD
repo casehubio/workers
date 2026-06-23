@@ -1016,7 +1016,7 @@ All other architectural decisions are documented inline in §9.4 layer entries.
 | Risk | Impact | Mitigation | Status |
 |---|---|---|---|
 | Co-deployment CDI ambiguity (engine#461) | Cannot deploy HTTP + Camel + other workers together | Composite `WorkerExecutionManager` in engine | 🔲 Blocked on engine#461 |
-| `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe limited to platform-global until engine#530 ships | ✅ Done |
+| `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe uses `ProvisionContext.tenancyId()` (engine#530 shipped, wired in #15) | ✅ Done |
 | Upstream SNAPSHOT break | `Worker` constructor went private — `Worker.builder()` required | Fixed in tests; `WorkerTestSupport` review pending if engine-api publishes | ✅ Mitigated |
 | No subprocess sandboxing (workers-script) | Script execution runs with JVM process privileges | Acceptable for trusted operator-configured scripts; external sandboxing (containers, seccomp) is a deployment concern | Accepted risk |
 
