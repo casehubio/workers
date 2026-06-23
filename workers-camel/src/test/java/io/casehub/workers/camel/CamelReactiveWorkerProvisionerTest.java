@@ -3,10 +3,12 @@ package io.casehub.workers.camel;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
+import io.casehub.api.model.ProvisionContext;
 import io.casehub.api.spi.ProvisionResult;
 import io.casehub.workers.common.WorkerProvisioningException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +30,7 @@ class CamelReactiveWorkerProvisionerTest {
             .thenReturn(Optional.of("send-email"));
         when(resolver.resolve(eq("send-email"), anyString())).thenReturn("direct:send-email");
 
-        ProvisionResult result = provisioner.provision(Set.of("send-email", "unknown"), null)
+        ProvisionResult result = provisioner.provision(Set.of("send-email", "unknown"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
             .await().indefinitely();
 
         assertThat(result.causedByEntryId()).isNull();
@@ -39,7 +41,7 @@ class CamelReactiveWorkerProvisionerTest {
         when(resolver.firstMatch(any(), anyString())).thenReturn(Optional.empty());
 
         try {
-            provisioner.provision(Set.of("nonexistent"), null)
+            provisioner.provision(Set.of("nonexistent"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
                 .await().indefinitely();
             org.junit.jupiter.api.Assertions.fail("Expected WorkerProvisioningException");
         } catch (Exception e) {

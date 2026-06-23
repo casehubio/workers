@@ -3,11 +3,13 @@ package io.casehub.workers.http;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
+import io.casehub.api.model.ProvisionContext;
 import io.casehub.api.spi.ProvisionResult;
 import io.casehub.workers.common.WorkerProvisioningException;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +38,7 @@ class HttpReactiveWorkerProvisionerTest {
             .thenReturn(Optional.of("payment-api"));
         when(resolver.resolve(eq("payment-api"), anyString())).thenReturn(endpoint);
 
-        ProvisionResult result = provisioner.provision(Set.of("payment-api", "unknown"), null)
+        ProvisionResult result = provisioner.provision(Set.of("payment-api", "unknown"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
             .await().indefinitely();
 
         assertThat(result.causedByEntryId()).isNull();
@@ -47,7 +49,7 @@ class HttpReactiveWorkerProvisionerTest {
         when(resolver.firstMatch(any(), anyString())).thenReturn(Optional.empty());
 
         try {
-            provisioner.provision(Set.of("nonexistent"), null)
+            provisioner.provision(Set.of("nonexistent"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
                 .await().indefinitely();
             org.junit.jupiter.api.Assertions.fail("Expected WorkerProvisioningException");
         } catch (Exception e) {

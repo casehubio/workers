@@ -173,7 +173,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - EndpointRegistry resolution order: Tier 1 (SPI beans) > Tier 2 (config) > Tier 3 (EndpointRegistry). Single registry call with tenancyId — registry handles tenant → platform-global fallback internally. `capabilities()` stays static (SPI + config only).
 - EndpointRegistry path convention: HTTP uses `Path.of("http", capabilityTag)`, MCP uses `Path.of("mcp", serverName)`. Protocol check on descriptors: HTTP resolver accepts `EndpointProtocol.HTTP` only, MCP accepts `EndpointProtocol.MCP` only. Wrong protocol → ignored (returns empty), not faulted.
 - MCP firstMatch() for Tier 3: validates server existence via registry lookup, not individual tool existence. Tool validation deferred to dispatch time (same lazy pattern as 404 session recovery).
-- Provisioner tenancyId: uses `TenancyConstants.PLATFORM_TENANT_ID` until engine#530 ships. Dispatch path (`submit()`) is fully tenant-aware via `CaseInstance.tenancyId`.
+- Provisioner tenancyId: uses `context.tenancyId()` from `ProvisionContext` (engine#530 shipped). Dispatch path (`submit()`) is fully tenant-aware via `CaseInstance.tenancyId`.
 - Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
@@ -194,8 +194,8 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 | `casehub-engine-common` | `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
 | `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants` — Tier 3 endpoint resolution in HTTP and MCP resolvers |
 | engine#461 | Composite `WorkerExecutionManager` — required for co-deploying HTTP + Camel + Quartz on same classpath |
-| engine#530 | Add `tenancyId` to `ProvisionContext` — provisioner probe limited to platform-global endpoints until this ships |
-| engine#531 | Remove `getCapabilities()` hard gate in `tryProvision()` — registry-only endpoints unreachable via provisioner fallback path until this ships (primary dispatch path unaffected) |
+| ~~engine#530~~ | ~~Add `tenancyId` to `ProvisionContext`~~ — shipped, wired in #15 |
+| ~~engine#531~~ | ~~Remove `getCapabilities()` hard gate in `tryProvision()`~~ — shipped, no workers-side changes needed |
 
 ## Cross-Repo Conventions
 

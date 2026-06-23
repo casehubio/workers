@@ -1,6 +1,5 @@
 package io.casehub.workers.common;
 
-import io.casehub.api.model.ProvisionContext;
 import java.util.Set;
 
 public final class WorkerProvisionerSupport {
@@ -14,12 +13,6 @@ public final class WorkerProvisionerSupport {
                     "Unsupported capability: " + cap + ". Supported: " + supported);
             }
         }
-    }
-
-    public static String tenancyId(ProvisionContext ctx) {
-        return ctx.propagationContext() != null
-            ? ctx.propagationContext().getAttribute("tenancyId").orElse(null)
-            : null;
     }
 
     public static WorkerProvisioningException wrap(Throwable t, String capability) {

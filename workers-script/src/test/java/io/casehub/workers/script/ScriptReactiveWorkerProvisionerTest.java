@@ -3,11 +3,13 @@ package io.casehub.workers.script;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.casehub.api.model.ProvisionContext;
 import io.casehub.api.spi.ProvisionResult;
 import io.casehub.workers.common.WorkerProvisioningException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ScriptReactiveWorkerProvisionerTest {
@@ -22,7 +24,7 @@ class ScriptReactiveWorkerProvisionerTest {
         provisioner.scriptDefinitionResolver = resolver;
 
         ProvisionResult result = provisioner
-            .provision(Set.of("script:build"), null)
+            .provision(Set.of("script:build"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
             .await().indefinitely();
 
         assertThat(result).isEqualTo(ProvisionResult.empty());
@@ -36,7 +38,7 @@ class ScriptReactiveWorkerProvisionerTest {
         provisioner.scriptDefinitionResolver = resolver;
 
         assertThatThrownBy(() ->
-            provisioner.provision(Set.of("script:missing"), null)
+            provisioner.provision(Set.of("script:missing"), new ProvisionContext(UUID.randomUUID(), "platform", "task", null, null, null, null))
                 .await().indefinitely())
             .isInstanceOf(WorkerProvisioningException.class);
     }
