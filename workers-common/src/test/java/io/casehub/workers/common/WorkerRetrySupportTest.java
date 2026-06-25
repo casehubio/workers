@@ -6,11 +6,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.casehub.api.model.BackoffStrategy;
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.ExecutionPolicy;
-import io.casehub.api.model.RetryPolicy;
-import io.casehub.api.model.Worker;
+import io.casehub.platform.api.governance.BackoffStrategy;
+import io.casehub.worker.api.Capability;
+import io.casehub.platform.api.governance.ExecutionPolicy;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.engine.common.internal.event.EventBusAddresses;
 import io.casehub.engine.common.internal.event.WorkerRetriesExhaustedEvent;
@@ -20,6 +22,7 @@ import io.casehub.engine.common.spi.EventLogRepository;
 import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -65,7 +68,7 @@ class WorkerRetrySupportTest {
         @Test
         void workerWithDefaultExecutionPolicy_returnsItsRetryPolicy() {
             // Worker's default ExecutionPolicy() has new RetryPolicy() — should return it
-            Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(ctx -> null).build();
+            Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             // default ExecutionPolicy sets retries = new RetryPolicy()
             RetryPolicy result = WorkerRetrySupport.resolveRetryPolicy(worker);
 
@@ -162,7 +165,7 @@ class WorkerRetrySupportTest {
         @Test
         void constructsCorrectEventLogAndCallsAppend() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(ctx -> null).build();
+            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -174,7 +177,7 @@ class WorkerRetrySupportTest {
 
             EventLog log = captor.getValue();
             assertThat(log.getCaseId()).isEqualTo(instance.getUuid());
-            assertThat(log.getWorkerId()).isEqualTo("send-email");
+            assertThat(log.getWorkerId()).isEqualTo(worker.name());
             assertThat(log.getEventType()).isEqualTo(CaseHubEventType.WORKER_EXECUTION_FAILED);
             assertThat(log.getTimestamp()).isNotNull();
 
@@ -186,7 +189,7 @@ class WorkerRetrySupportTest {
         @Test
         void nullErrorMessage_usesUnknown() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(ctx -> null).build();
+            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -283,17 +286,14 @@ class WorkerRetrySupportTest {
     // ── Helpers ──
 
     private static Worker testWorker(ExecutionPolicy policy) {
-        Worker worker = Worker.builder()
+        Worker.Builder builder = Worker.builder()
             .name("test-worker")
-            .capabilities(List.of(new Capability("cap", "", "")))
-            .function(ctx -> null)
-            .build();
+            .capabilities(List.of(Capability.of("cap", "", "")))
+            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())));
         if (policy != null) {
-            worker.setExecutionPolicy(policy);
-        } else {
-            worker.setExecutionPolicy(null);
+            builder.executionPolicy(policy);
         }
-        return worker;
+        return builder.build();
     }
 
     private static CaseInstance testCaseInstance() {

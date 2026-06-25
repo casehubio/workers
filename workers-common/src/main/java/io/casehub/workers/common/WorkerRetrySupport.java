@@ -2,10 +2,10 @@ package io.casehub.workers.common;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.api.model.BackoffStrategy;
-import io.casehub.api.model.ExecutionPolicy;
-import io.casehub.api.model.RetryPolicy;
-import io.casehub.api.model.Worker;
+import io.casehub.platform.api.governance.BackoffStrategy;
+import io.casehub.platform.api.governance.ExecutionPolicy;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
 import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.api.model.event.EventStreamType;
 import io.casehub.engine.common.internal.event.EventBusAddresses;
@@ -51,7 +51,7 @@ public class WorkerRetrySupport {
      * policy or no retry policy.
      */
     public static RetryPolicy resolveRetryPolicy(Worker worker) {
-        ExecutionPolicy executionPolicy = worker.getExecutionPolicy();
+        ExecutionPolicy executionPolicy = worker.executionPolicy();
         if (executionPolicy == null || executionPolicy.retries() == null) {
             return new RetryPolicy();
         }
@@ -126,7 +126,7 @@ public class WorkerRetrySupport {
                                         String tenancyId) {
         EventLog failureLog = new EventLog();
         failureLog.setCaseId(instance.getUuid());
-        failureLog.setWorkerId(worker.getName());
+        failureLog.setWorkerId(worker.name());
         failureLog.setEventType(CaseHubEventType.WORKER_EXECUTION_FAILED);
         failureLog.setStreamType(EventStreamType.CASE);
         failureLog.setTimestamp(Instant.now());

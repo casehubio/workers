@@ -1,6 +1,6 @@
 package io.casehub.workers.common;
 
-import io.casehub.api.model.Capability;
+import io.casehub.worker.api.Capability;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -47,7 +47,7 @@ public class AsyncWorkerCompletionRegistry {
 
     public int countByWorkerName(String workerName) {
         return (int) pending.values().stream()
-            .filter(p -> p.correlationContext().worker().getName().equals(workerName))
+            .filter(p -> p.correlationContext().worker().name().equals(workerName))
             .count();
     }
 

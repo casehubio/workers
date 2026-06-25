@@ -1,7 +1,7 @@
 package io.casehub.workers.camel;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
@@ -44,23 +44,23 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         String entryUri;
         try {
-            entryUri = camelCapabilityResolver.resolve(capability.getName(), instance.tenancyId);
+            entryUri = camelCapabilityResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
-            LOG.errorf("Camel route for capability %s missing at dispatch time", capability.getName());
+            LOG.errorf("Camel route for capability %s missing at dispatch time", capability.name());
             faultPublisher.fault(
                 CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
                 new WorkerCorrelationContext(instance, worker,
-                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.getName(),
-                        capability.getName(), inputData), instance.tenancyId),
+                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.name(),
+                        capability.name(), inputData), instance.tenancyId),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
         String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.getName(), capability.getName(), inputData);
+            instance.getUuid(), worker.name(), capability.name(), inputData);
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(
             instance, worker, idempotency, instance.tenancyId);
-        ExchangePattern pattern = camelCapabilityResolver.exchangePattern(capability.getName());
+        ExchangePattern pattern = camelCapabilityResolver.exchangePattern(capability.name());
 
         return pattern == ExchangePattern.InOut
             ? submitSync(ctx, entryUri, capability, inputData, eventLogId)
@@ -76,7 +76,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                 exchange.getIn().setHeader(CasehubWorkerHeaders.CASE_ID,
                     ctx.caseInstance().getUuid().toString());
                 exchange.getIn().setHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
-                exchange.getIn().setHeader(CasehubWorkerHeaders.TASK_TYPE, capability.getName());
+                exchange.getIn().setHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
                 exchange.getIn().setBody(inputData);
             }))
             .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
@@ -114,7 +114,7 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
                     exchange.getIn().setHeader(CasehubWorkerHeaders.CASE_ID,
                         ctx.caseInstance().getUuid().toString());
                     exchange.getIn().setHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
-                    exchange.getIn().setHeader(CasehubWorkerHeaders.TASK_TYPE, capability.getName());
+                    exchange.getIn().setHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
                     exchange.getIn().setHeader(CasehubWorkerHeaders.WORKER_ID, pending.dispatchId());
                     exchange.getIn().setHeader(CasehubWorkerHeaders.CALLBACK_TOKEN, pending.callbackToken());
                     exchange.getIn().setBody(inputData);

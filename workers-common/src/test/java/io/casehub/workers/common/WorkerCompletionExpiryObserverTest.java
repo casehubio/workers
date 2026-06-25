@@ -2,8 +2,10 @@ package io.casehub.workers.common;
 
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import java.time.Instant;
 import java.util.List;
@@ -21,11 +23,11 @@ class WorkerCompletionExpiryObserverTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
         PendingCompletion pending = new PendingCompletion(
             "dispatch-1", "http", "casehub.workers.http.fault",
-            ctx, "token", new Capability("cap", "", ""), 42L,
+            ctx, "token", Capability.of("cap", "", ""), 42L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
 
         observer.onExpiry(new CompletionExpiredEvent(pending));

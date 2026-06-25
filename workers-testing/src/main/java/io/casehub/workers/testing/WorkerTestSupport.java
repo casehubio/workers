@@ -1,9 +1,12 @@
 package io.casehub.workers.testing;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public final class WorkerTestSupport {
@@ -26,12 +29,14 @@ public final class WorkerTestSupport {
 
     public static Worker testWorker(String name, String... capabilityTags) {
         List<Capability> caps = java.util.Arrays.stream(capabilityTags)
-            .map(tag -> new Capability(tag, "", ""))
+            .map(tag -> Capability.of(tag, "", ""))
             .toList();
-        return Worker.builder().name(name).capabilities(caps).function(ctx -> null).build();
+        return Worker.builder().name(name).capabilities(caps)
+            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())))
+            .build();
     }
 
     public static Capability testCapability(String tag) {
-        return new Capability(tag, "", "");
+        return Capability.of(tag, "", "");
     }
 }

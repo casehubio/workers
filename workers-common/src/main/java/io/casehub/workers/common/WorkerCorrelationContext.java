@@ -1,6 +1,6 @@
 package io.casehub.workers.common;
 
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.model.CaseInstance;
 
 public record WorkerCorrelationContext(

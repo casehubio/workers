@@ -1,6 +1,6 @@
 package io.casehub.workers.common;
 
-import io.casehub.api.model.Capability;
+import io.casehub.worker.api.Capability;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

@@ -190,9 +190,10 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 
 | Dependency | Why |
 |---|---|
-| `casehub-engine-api` | `ReactiveWorkerProvisioner`, `WorkerExecutionManager`, `Worker`, `Capability`, `ExecutionPolicy`, `RetryPolicy`, `BackoffStrategy` |
-| `casehub-engine-common` | `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
-| `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants` — Tier 3 endpoint resolution in HTTP and MCP resolvers |
+| `casehub-worker-api` | `Worker`, `Capability`, `WorkerFunction`, `WorkerResult`, `WorkerOutcome` — Worker Foundation record types |
+| `casehub-engine-api` | `ReactiveWorkerProvisioner`, `ProvisionContext`, `ProvisionResult`, `WorkResult`, `CaseHubEventType`, `EventStreamType` |
+| `casehub-engine-common` | `WorkerExecutionManager`, `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
+| `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants`, `ExecutionPolicy`, `RetryPolicy`, `BackoffStrategy` |
 | engine#461 | Composite `WorkerExecutionManager` — required for co-deploying HTTP + Camel + Quartz on same classpath |
 | ~~engine#530~~ | ~~Add `tenancyId` to `ProvisionContext`~~ — shipped, wired in #15 |
 | ~~engine#531~~ | ~~Remove `getCapabilities()` hard gate in `tryProvision()`~~ — shipped, no workers-side changes needed |

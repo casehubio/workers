@@ -3,8 +3,10 @@ package io.casehub.workers.camel;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
@@ -45,7 +47,7 @@ class CamelWorkerExecutionManagerTest {
     void submit_missingRoute_firesFault() {
         CaseInstance instance = testInstance();
         Worker worker = testWorker();
-        Capability cap = new Capability("missing", "", "");
+        Capability cap = Capability.of("missing", "", "");
         when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
         manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
@@ -73,6 +75,6 @@ class CamelWorkerExecutionManagerTest {
     }
 
     private Worker testWorker() {
-        return Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        return Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
     }
 }

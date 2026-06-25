@@ -1,7 +1,7 @@
 package io.casehub.workers.githubactions;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
@@ -44,7 +44,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
-        String capTag = capability.getName();
+        String capTag = capability.name();
         boolean isWorkflowDispatch = GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH.equals(capTag);
 
         String owner = stringField(inputData, "owner");
@@ -162,7 +162,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
                                               Capability capability,
                                               Map<String, Object> inputData) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.getName(), capability.getName(), inputData);
+            instance.getUuid(), worker.name(), capability.name(), inputData);
         return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
     }
 

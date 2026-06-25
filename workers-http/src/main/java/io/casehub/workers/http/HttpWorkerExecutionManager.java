@@ -2,8 +2,8 @@ package io.casehub.workers.http;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
@@ -65,20 +65,20 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         ResolvedEndpoint endpoint;
         try {
-            endpoint = httpEndpointResolver.resolve(capability.getName(), instance.tenancyId);
+            endpoint = httpEndpointResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
-            LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.getName());
+            LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.name());
             faultPublisher.fault(
                 HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
                 new WorkerCorrelationContext(instance, worker,
-                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.getName(),
-                        capability.getName(), inputData), instance.tenancyId),
+                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.name(),
+                        capability.name(), inputData), instance.tenancyId),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
         String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.getName(), capability.getName(), inputData);
+            instance.getUuid(), worker.name(), capability.name(), inputData);
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(
             instance, worker, idempotency, instance.tenancyId);
 
@@ -107,7 +107,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         request.putHeader(CasehubWorkerHeaders.IDEMPOTENCY, ctx.idempotency());
         request.putHeader(CasehubWorkerHeaders.CASE_ID, ctx.caseInstance().getUuid().toString());
         request.putHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
-        request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.getName());
+        request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
 
         // Endpoint headers AFTER — endpoint wins on collision
         endpoint.headers().forEach(request::putHeader);
@@ -136,7 +136,7 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         request.putHeader(CasehubWorkerHeaders.IDEMPOTENCY, ctx.idempotency());
         request.putHeader(CasehubWorkerHeaders.CASE_ID, ctx.caseInstance().getUuid().toString());
         request.putHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
-        request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.getName());
+        request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
         // Async-specific headers
         request.putHeader(CasehubWorkerHeaders.WORKER_ID, pending.dispatchId());
         request.putHeader(CasehubWorkerHeaders.CALLBACK_TOKEN, pending.callbackToken());

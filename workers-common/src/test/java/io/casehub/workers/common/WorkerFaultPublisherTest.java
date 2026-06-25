@@ -3,8 +3,10 @@ package io.casehub.workers.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.vertx.mutiny.core.eventbus.EventBus;
@@ -25,9 +27,9 @@ class WorkerFaultPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
-        Capability capability = new Capability("run-script", "", "");
+        Capability capability = Capability.of("run-script", "", "");
 
         publisher.fault("casehub.workers.test.fault", ctx, capability, 99L,
             new RuntimeException("boom"));
@@ -51,9 +53,9 @@ class WorkerFaultPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
-        Capability capability = new Capability("send-webhook", "", "");
+        Capability capability = Capability.of("send-webhook", "", "");
         PendingCompletion pending = new PendingCompletion(
             "dispatch-1", "http", "casehub.workers.http.fault",
             ctx, "token", capability, 42L,

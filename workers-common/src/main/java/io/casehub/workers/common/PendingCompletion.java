@@ -1,6 +1,6 @@
 package io.casehub.workers.common;
 
-import io.casehub.api.model.Capability;
+import io.casehub.worker.api.Capability;
 import java.time.Instant;
 import java.util.Map;
 

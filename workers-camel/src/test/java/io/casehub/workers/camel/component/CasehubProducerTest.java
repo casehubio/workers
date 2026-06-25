@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.camel.CamelWorkerEventBusAddresses;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
@@ -47,7 +49,7 @@ class CasehubProducerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
         testPending = new PendingCompletion(
             "test-dispatch-id",
@@ -55,7 +57,7 @@ class CasehubProducerTest {
             CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
             ctx,
             UUID.randomUUID().toString(),
-            new Capability("cap", "", ""),
+            Capability.of("cap", "", ""),
             1L,
             Instant.now(),
             Instant.now().plus(Duration.ofMinutes(60)),

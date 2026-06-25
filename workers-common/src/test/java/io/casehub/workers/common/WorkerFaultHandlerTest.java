@@ -6,11 +6,13 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.casehub.api.model.BackoffStrategy;
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.ExecutionPolicy;
-import io.casehub.api.model.RetryPolicy;
-import io.casehub.api.model.Worker;
+import io.casehub.platform.api.governance.BackoffStrategy;
+import io.casehub.worker.api.Capability;
+import io.casehub.platform.api.governance.ExecutionPolicy;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
@@ -85,8 +87,8 @@ class WorkerFaultHandlerTest {
         CaseInstance instance = testCaseInstance();
         RetryPolicy retryPolicy = new RetryPolicy(3, 100, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
-        Worker worker = testWorker("w1");
-        worker.setExecutionPolicy(ep);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of()).executionPolicy(ep)
+            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("transient error");
 
@@ -123,8 +125,8 @@ class WorkerFaultHandlerTest {
         CaseInstance instance = testCaseInstance();
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
-        Worker worker = testWorker("w1");
-        worker.setExecutionPolicy(ep);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of()).executionPolicy(ep)
+            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("500 error");
 
@@ -147,8 +149,8 @@ class WorkerFaultHandlerTest {
         CaseInstance instance = testCaseInstance();
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
-        Worker worker = testWorker("w1");
-        worker.setExecutionPolicy(ep);
+        Worker worker = Worker.builder().name("w1").capabilities(List.of()).executionPolicy(ep)
+            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RetryAfterException cause = new RetryAfterException(200, "429 Too Many Requests");
 
@@ -185,10 +187,10 @@ class WorkerFaultHandlerTest {
     }
 
     private static Worker testWorker(String name) {
-        return Worker.builder().name(name).capabilities(List.of()).function(ctx -> null).build();
+        return Worker.builder().name(name).capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
     }
 
     private static Capability testCapability(String tag) {
-        return new Capability(tag, "", "");
+        return Capability.of(tag, "", "");
     }
 }

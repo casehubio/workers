@@ -3,8 +3,10 @@ package io.casehub.workers.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.event.EventBusAddresses;
 import io.casehub.engine.common.internal.event.WorkflowExecutionCompleted;
 import io.casehub.engine.common.internal.model.CaseInstance;
@@ -25,7 +27,7 @@ class WorkflowCompletionPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
         Map<String, Object> output = Map.of("result", "ok");
 
@@ -40,6 +42,5 @@ class WorkflowCompletionPublisherTest {
         assertThat(event.worker()).isSameAs(worker);
         assertThat(event.idempotency()).isEqualTo("hash-1");
         assertThat(event.output()).isEqualTo(output);
-        assertThat(event.plannedAction()).isNull();
     }
 }

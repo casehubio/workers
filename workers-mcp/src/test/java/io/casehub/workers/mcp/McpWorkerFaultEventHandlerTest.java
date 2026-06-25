@@ -2,13 +2,16 @@ package io.casehub.workers.mcp;
 
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.WorkerFaultHandler;
 import io.smallrye.mutiny.Uni;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -23,8 +26,8 @@ class McpWorkerFaultEventHandlerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(ctx -> null).build();
-        Capability capability = new Capability("mcp:slack:send-message", "", "");
+        Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Capability capability = Capability.of("mcp:slack:send-message", "", "");
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, capability, "hash-1", "1",

@@ -104,6 +104,13 @@
                 <scope>test</scope>
             </dependency>
 
+            <!-- Worker API — Worker/Capability record types -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-worker-api</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
+
             <!-- Platform — CurrentPrincipal, tenancyId -->
             <dependency>
                 <groupId>io.casehub</groupId>

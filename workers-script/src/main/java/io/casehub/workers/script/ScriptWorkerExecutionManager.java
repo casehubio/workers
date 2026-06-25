@@ -2,8 +2,8 @@ package io.casehub.workers.script;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
@@ -70,7 +70,7 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
                             Capability capability, Map<String, Object> inputData) {
         ScriptDefinition definition;
         try {
-            definition = scriptDefinitionResolver.resolve(capability.getName(), instance.tenancyId);
+            definition = scriptDefinitionResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
             faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
@@ -126,7 +126,7 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
         }
         env.put("CASEHUB_CASE_ID", ctx.caseInstance().getUuid().toString());
         env.put("CASEHUB_TENANCY_ID", ctx.tenancyId() != null ? ctx.tenancyId() : "");
-        env.put("CASEHUB_CAPABILITY", capability.getName());
+        env.put("CASEHUB_CAPABILITY", capability.name());
         env.put("CASEHUB_IDEMPOTENCY", ctx.idempotency());
 
         Process process;
@@ -240,7 +240,7 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
                                               Capability capability,
                                               Map<String, Object> inputData) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.getName(), capability.getName(), inputData);
+            instance.getUuid(), worker.name(), capability.name(), inputData);
         return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
     }
 }

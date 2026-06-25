@@ -3,8 +3,10 @@ package io.casehub.workers.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import jakarta.ws.rs.core.Response;
 import java.time.Duration;
@@ -85,8 +87,8 @@ class WorkerCallbackResourceTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilities(List.of(new Capability("cap", "", ""))).function(ctx -> null).build();
+        Worker worker = Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
-        return registry.register("camel", "test.fault", ctx, new Capability("cap", "", ""), 1L, Duration.ofMinutes(60), Map.of());
+        return registry.register("camel", "test.fault", ctx, Capability.of("cap", "", ""), 1L, Duration.ofMinutes(60), Map.of());
     }
 }

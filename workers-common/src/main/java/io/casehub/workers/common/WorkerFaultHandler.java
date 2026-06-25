@@ -2,8 +2,8 @@ package io.casehub.workers.common;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.api.model.RetryPolicy;
-import io.casehub.api.model.Worker;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
@@ -39,13 +39,13 @@ public class WorkerFaultHandler {
             .flatMap(ignored -> {
                 if (event.cause() instanceof PermanentFaultException) {
                     retrySupport.publishRetriesExhausted(
-                        instance.getUuid(), worker.getName(), inputDataHash,
-                        worker.getName(), tenancyId);
+                        instance.getUuid(), worker.name(), inputDataHash,
+                        worker.name(), tenancyId);
                     return Uni.createFrom().voidItem();
                 }
 
                 return retrySupport.countFailedAttempts(
-                        instance.getUuid(), worker.getName(), inputDataHash, tenancyId)
+                        instance.getUuid(), worker.name(), inputDataHash, tenancyId)
                     .flatMap(failureCount -> {
                         RetryPolicy retryPolicy = WorkerRetrySupport.resolveRetryPolicy(worker);
                         if (failureCount < retryPolicy.maxAttempts()) {
@@ -59,15 +59,15 @@ public class WorkerFaultHandler {
                             return reloadAndResubmit(event, delayMs);
                         } else {
                             retrySupport.publishRetriesExhausted(
-                                instance.getUuid(), worker.getName(), inputDataHash,
-                                worker.getName(), tenancyId);
+                                instance.getUuid(), worker.name(), inputDataHash,
+                                worker.name(), tenancyId);
                             return Uni.createFrom().voidItem();
                         }
                     });
             })
             .onFailure().recoverWithUni(ex -> {
                 LOG.errorf(ex, "Fault handling failed for worker %s case %s — case may stall",
-                           worker.getName(), instance.getUuid());
+                           worker.name(), instance.getUuid());
                 return Uni.createFrom().voidItem();
             });
     }

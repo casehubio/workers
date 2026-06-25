@@ -4,8 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.casehub.api.model.Capability;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
@@ -60,7 +60,7 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
-        String capTag = capability.getName();
+        String capTag = capability.name();
         String serverName = McpServerResolver.parseServerName(capTag);
         String toolName = McpServerResolver.parseToolName(capTag);
 
@@ -263,7 +263,7 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
                                               Capability capability,
                                               Map<String, Object> inputData) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.getName(), capability.getName(), inputData);
+            instance.getUuid(), worker.name(), capability.name(), inputData);
         return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
     }
 }

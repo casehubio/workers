@@ -3,7 +3,7 @@ package io.casehub.workers.script;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import io.casehub.api.model.Capability;
+import io.casehub.worker.api.Capability;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;

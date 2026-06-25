@@ -1,7 +1,7 @@
 package io.casehub.workers.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import io.casehub.api.model.Capability;
+import io.casehub.worker.api.Capability;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class PendingCompletionTest {
     @Test
     void recordComponents() {
-        Capability cap = new Capability("send-email", "", "");
+        Capability cap = Capability.of("send-email", "", "");
         Instant now = Instant.now();
         Instant expires = now.plusSeconds(3600);
         PendingCompletion pending = new PendingCompletion(
