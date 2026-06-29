@@ -49,7 +49,7 @@ Workers implement two engine SPIs — these are called at different times:
 | `ReactiveWorkerProvisioner` | `CaseContextChangedEventHandler.tryProvision()` | Capability probe — validates route exists, returns `ProvisionResult.empty()` |
 | `WorkerExecutionManager` | `WorkerScheduleEventHandler` | Actual dispatch — sends exchange, manages completion |
 
-Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWorkerProvisioner` and `NoOpWorkerExecutionManager` when Camel beans are present.
+Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReactiveWorkerProvisioner` when worker beans are present. `WorkerExecutionManager` backends are discovered by `CompositeWorkerExecutionManager` via the `@WorkerBackend` qualifier — no displacement needed.
 
 ## workers-common Key Types
 
@@ -141,7 +141,7 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 ## Key Rules
 
 - `workers-testing` is never a compile or runtime dependency — test scope only.
-- Each worker module activates by classpath presence (`@ApplicationScoped`, no config required to enable).
+- Each worker module activates by classpath presence (`@ApplicationScoped`, no config required to enable). All `WorkerExecutionManager` implementations must be annotated `@WorkerBackend @Priority(10)` and implement `supports(String capabilityName, String tenancyId)` — the composite manager discovers backends via this qualifier.
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
 - Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
@@ -178,13 +178,9 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
 
-## Co-deployment Constraints
+## Co-deployment
 
-- `workers-camel` + `scheduler-quartz` on same classpath → CDI ambiguity on `WorkerExecutionManager` → startup failure. Unsupported until a composite manager is built in engine.
-- `workers-camel` + `workers-http` → `workerType` discriminator in `PendingCompletion` prevents double CDI event handling. `WorkerExecutionManager` CDI ambiguity still applies — same composite manager needed.
-- `workers-github-actions` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType` discriminator prevents event cross-talk.
-- `workers-mcp` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType = "mcp"` discriminator prevents event cross-talk.
-- `workers-script` + any other worker → same `WorkerExecutionManager` CDI ambiguity. `workerType = "script"` discriminator prevents event cross-talk.
+All worker modules can co-deploy on the same classpath. `CompositeWorkerExecutionManager` (engine-runtime) discovers all `@WorkerBackend`-qualified `WorkerExecutionManager` beans and routes via `supports()`. CDI event cross-talk is prevented by `workerType` discriminator in `PendingCompletion` and per-module fault addresses.
 
 ## Cross-Repo Dependencies
 
@@ -192,9 +188,9 @@ Both are `@ApplicationScoped` (no `@DefaultBean`). CDI displaces `NoOpReactiveWo
 |---|---|
 | `casehub-worker-api` | `Worker`, `Capability`, `WorkerFunction`, `WorkerResult`, `WorkerOutcome` — Worker Foundation record types |
 | `casehub-engine-api` | `ReactiveWorkerProvisioner`, `ProvisionContext`, `ProvisionResult`, `WorkResult`, `CaseHubEventType`, `EventStreamType` |
-| `casehub-engine-common` | `WorkerExecutionManager`, `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
+| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkerExecutionRoutingStrategy`, `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
 | `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants`, `ExecutionPolicy`, `RetryPolicy`, `BackoffStrategy` |
-| engine#461 | Composite `WorkerExecutionManager` — required for co-deploying HTTP + Camel + Quartz on same classpath |
+| ~~engine#461~~ | ~~Composite `WorkerExecutionManager`~~ — shipped, all backends migrated to `@WorkerBackend` |
 | ~~engine#530~~ | ~~Add `tenancyId` to `ProvisionContext`~~ — shipped, wired in #15 |
 | ~~engine#531~~ | ~~Remove `getCapabilities()` hard gate in `tryProvision()`~~ — shipped, no workers-side changes needed |
 

@@ -30,7 +30,7 @@ Integration-tier collection of CaseHub worker implementations. Each module provi
 
 | Goal | Mechanism |
 |---|---|
-| Classpath activation | `@ApplicationScoped` — no config required to enable; CDI displaces `NoOp*` defaults |
+| Classpath activation | `@WorkerBackend @ApplicationScoped` — no config required to enable; discovered by `CompositeWorkerExecutionManager` via qualifier |
 | Stateless workers | All state in the case instance or external system; never in provisioner or execution manager beans |
 | Shared fault infrastructure | `WorkerFaultPublisher` + `WorkerFaultHandler` in workers-common; per-module stubs are 5 lines |
 | Worker runtime lifecycle | `WorkerRuntime` SPI — `initialize()`, `shutdown()`, `capabilities()`, `status()` |
@@ -54,10 +54,10 @@ Integration-tier collection of CaseHub worker implementations. Each module provi
 |---|---|
 | Java 21, Quarkus 3.32.2 | Platform standard — all casehubio repos aligned |
 | Two engine SPIs per worker | `ReactiveWorkerProvisioner` (capability probe) + `WorkerExecutionManager` (dispatch) — defined in casehub-engine-api |
-| CDI activation by classpath | No `@DefaultBean` on workers — plain `@ApplicationScoped` displaces the engine's no-op defaults |
+| CDI activation by classpath | `@WorkerBackend @ApplicationScoped` on all `WorkerExecutionManager` impls — discovered by `CompositeWorkerExecutionManager` in engine-runtime |
 | Worker-specific fault addresses | Each worker fires faults on its own event bus address — never `WORKFLOW_EXECUTION_FAILED` (Quartz listens there) |
 | `eventBus.publish()` for completion | Two consumers (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`) — `request()` delivers to only one |
-| Co-deployment CDI ambiguity | Multiple workers on the same classpath → `WorkerExecutionManager` ambiguity. Blocked by engine#461 (composite manager) |
+| Co-deployment supported | All worker modules co-deploy — `CompositeWorkerExecutionManager` routes via `supports()`, `workerType` discriminator prevents event cross-talk |
 
 ---
 
@@ -252,7 +252,7 @@ This is a Java library collection — no standalone deployment. Consuming applic
 
 Published to GitHub Packages: `io.casehub:casehub-workers-*:0.2-SNAPSHOT`
 
-**Co-deployment constraint:** Only one worker module per deployment until engine#461 (composite `WorkerExecutionManager`) ships. Multiple workers on the same classpath cause CDI ambiguity on `WorkerExecutionManager`.
+**Co-deployment:** All worker modules can co-deploy. `CompositeWorkerExecutionManager` (engine-runtime, engine#461) discovers `@WorkerBackend`-qualified backends and routes via `supports()`.
 
 ---
 
@@ -270,8 +270,8 @@ Published to GitHub Packages: `io.casehub:casehub-workers-*:0.2-SNAPSHOT`
 ### Anti-patterns
 
 **Symptom:** `AmbiguousResolutionException` for `WorkerExecutionManager` at startup.
-**Cause:** Two worker modules on the same classpath — each provides an `@ApplicationScoped WorkerExecutionManager`.
-**Fix:** Deploy one worker module per application until engine#461 ships. `workerType` discriminator prevents event cross-talk, but CDI cannot resolve a single `WorkerExecutionManager`.
+**Cause:** A `WorkerExecutionManager` implementation missing the `@WorkerBackend` qualifier — CDI sees it as a second unqualified bean alongside the composite.
+**Fix:** All worker `WorkerExecutionManager` implementations must be annotated `@WorkerBackend @Priority(10)`. The composite discovers backends via `@WorkerBackend Instance<WorkerExecutionManager>`.
 
 **Symptom:** Worker faults processed twice — once by the worker's fault handler, once by Quartz.
 **Cause:** Fault published on `WORKFLOW_EXECUTION_FAILED` instead of the worker's own fault address.
@@ -695,8 +695,8 @@ Lifecycle SPI with fail-open CDI discovery — `WorkerRuntime` beans are discove
 
 ##### What it adds
 
-**Before:** `NoOpReactiveWorkerProvisioner @DefaultBean` and `NoOpWorkerExecutionManager @DefaultBean` in engine — no external dispatch capability.
-**After:** `CamelReactiveWorkerProvisioner @ApplicationScoped` and `CamelWorkerExecutionManager @ApplicationScoped` on classpath — CDI displaces the no-ops automatically.
+**Before:** `NoOpReactiveWorkerProvisioner @DefaultBean` in engine — no external dispatch capability.
+**After:** `CamelReactiveWorkerProvisioner @ApplicationScoped` displaces the no-op provisioner. `CamelWorkerExecutionManager @WorkerBackend @ApplicationScoped` is discovered by the composite manager.
 
 - **Config-driven capability resolution** — `casehub.workers.camel.capabilities.<tag>` maps capability tags to Camel URIs
 - **Blocking dispatch** — `ProducerTemplate.request()` is blocking; runs on `workerPool` via `emitOn()`
@@ -733,7 +733,7 @@ CDI displacement via classpath presence — `@ApplicationScoped` worker beans di
 3. Implement `ReactiveWorkerProvisioner` — validate capability exists in resolver; return `ProvisionResult.empty()`
 4. Implement `WorkerExecutionManager` — resolve target from capability tag, dispatch, fire completion or fault
 5. Implement `WorkerRuntime` — delegate `initialize()` to the capability resolver; report discovered capabilities
-6. Both `@ApplicationScoped` (no `@DefaultBean`) — CDI displaces engine defaults by classpath presence
+6. `WorkerExecutionManager` must be `@WorkerBackend @Priority(10) @ApplicationScoped` — discovered by the composite manager
 
 ---
 
@@ -1015,7 +1015,7 @@ All other architectural decisions are documented inline in §9.4 layer entries.
 
 | Risk | Impact | Mitigation | Status |
 |---|---|---|---|
-| Co-deployment CDI ambiguity (engine#461) | Cannot deploy HTTP + Camel + other workers together | Composite `WorkerExecutionManager` in engine | 🔲 Blocked on engine#461 |
+| ~~Co-deployment CDI ambiguity (engine#461)~~ | ~~Cannot deploy HTTP + Camel + other workers together~~ | `CompositeWorkerExecutionManager` + `@WorkerBackend` qualifier | ✅ Done — engine#461 shipped, all backends migrated |
 | `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe uses `ProvisionContext.tenancyId()` (engine#530 shipped, wired in #15) | ✅ Done |
 | Upstream SNAPSHOT break | `Worker` constructor went private — `Worker.builder()` required | Fixed in tests; `WorkerTestSupport` review pending if engine-api publishes | ✅ Mitigated |
 | No subprocess sandboxing (workers-script) | Script execution runs with JVM process privileges | Acceptable for trusted operator-configured scripts; external sandboxing (containers, seccomp) is a deployment concern | Accepted risk |
