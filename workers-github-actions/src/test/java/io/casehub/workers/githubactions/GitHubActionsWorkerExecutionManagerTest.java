@@ -500,8 +500,10 @@ class GitHubActionsWorkerExecutionManagerTest {
     }
 
     @Test
-    void schedulePersistedEvent_returnsVoid() {
-        assertThat(manager.schedulePersistedEvent(new EventLog()).await().indefinitely()).isNull();
+    void supports_returnsTrueForBothCapabilities() {
+        assertThat(manager.supports(GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH, "t1")).isTrue();
+        assertThat(manager.supports(GitHubActionsWorkerConstants.CAPABILITY_REPOSITORY_DISPATCH, "t1")).isTrue();
+        assertThat(manager.supports("unknown-capability", "t1")).isFalse();
     }
 
     @Test

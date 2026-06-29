@@ -211,4 +211,14 @@ class ScriptWorkerExecutionManagerTest {
             any(WorkerCorrelationContext.class),
             any(Capability.class), eq(1L), any(PermanentFaultException.class));
     }
+
+    @Test
+    void supports_delegatesToResolver() {
+        resolver.initialize(Map.of(
+            "script-1", new ScriptDefinition("script-1", "/bin/sh", List.of("-c", "echo ok"), null, Map.of(), 30, 1_048_576)
+        ));
+
+        assertThat(manager.supports("script:script-1", "t1")).isTrue();
+        assertThat(manager.supports("script:script-2", "t1")).isFalse();
+    }
 }

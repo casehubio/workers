@@ -143,6 +143,22 @@ public class McpServerResolver implements WorkerCapabilityResolver<ResolvedMcpSe
         return Set.copyOf(capabilityToServerName.keySet());
     }
 
+    @Override
+    public boolean canResolve(String capabilityTag, String tenancyId) {
+        if (capabilityToServerName.containsKey(capabilityTag)) {
+            return true;
+        }
+        if (registry != null) {
+            String parsedServer = parseServerName(capabilityTag);
+            if (!parsedServer.isEmpty()) {
+                return registry.resolve(Path.of("mcp", parsedServer), tenancyId)
+                    .filter(d -> d.protocol() == EndpointProtocol.MCP)
+                    .isPresent();
+            }
+        }
+        return false;
+    }
+
     /**
      * Package-private access to server by name — used by McpSessionManager.
      */

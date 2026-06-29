@@ -9,6 +9,7 @@ import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
+import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
@@ -21,6 +22,7 @@ import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
 import io.vertx.mutiny.ext.web.client.WebClient;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.List;
@@ -28,6 +30,8 @@ import java.util.Map;
 import java.util.Set;
 import org.jboss.logging.Logger;
 
+@WorkerBackend
+@Priority(10)
 @ApplicationScoped
 public class McpWorkerExecutionManager implements WorkerExecutionManager {
 
@@ -128,8 +132,8 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> schedulePersistedEvent(EventLog scheduledEventLog) {
-        return Uni.createFrom().voidItem();
+    public boolean supports(String capabilityName, String tenancyId) {
+        return serverResolver.canResolve(capabilityName, tenancyId);
     }
 
     @Override

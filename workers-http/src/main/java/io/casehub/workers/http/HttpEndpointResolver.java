@@ -124,6 +124,19 @@ public class HttpEndpointResolver implements WorkerCapabilityResolver<ResolvedEn
         return Set.copyOf(resolvedEndpoints.keySet());
     }
 
+    @Override
+    public boolean canResolve(String capabilityTag, String tenancyId) {
+        if (resolvedEndpoints.containsKey(capabilityTag)) {
+            return true;
+        }
+        if (registry != null) {
+            return registry.resolve(Path.of("http", capabilityTag), tenancyId)
+                .filter(d -> d.protocol() == EndpointProtocol.HTTP)
+                .isPresent();
+        }
+        return false;
+    }
+
     private ResolvedEndpoint resolveFromRegistry(String capabilityTag, String tenancyId) {
         return registry.resolve(Path.of("http", capabilityTag), tenancyId)
             .filter(d -> d.protocol() == EndpointProtocol.HTTP)

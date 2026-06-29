@@ -358,6 +358,15 @@ class McpWorkerExecutionManagerTest {
     }
 
     @Test
+    void supports_delegatesToResolver() {
+        when(serverResolver.canResolve("mcp:server1:tool1", "t1")).thenReturn(true);
+        when(serverResolver.canResolve("mcp:server2:tool2", "t1")).thenReturn(false);
+
+        assertThat(manager.supports("mcp:server1:tool1", "t1")).isTrue();
+        assertThat(manager.supports("mcp:server2:tool2", "t1")).isFalse();
+    }
+
+    @Test
     void getActiveWorkCount_returnsZero() {
         assertThat(manager.getActiveWorkCount("any")).isEqualTo(0);
     }

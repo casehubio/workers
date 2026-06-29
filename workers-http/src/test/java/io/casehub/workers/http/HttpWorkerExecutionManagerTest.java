@@ -428,8 +428,12 @@ class HttpWorkerExecutionManagerTest {
     // --- Delegation tests ---
 
     @Test
-    void schedulePersistedEvent_returnsVoid() {
-        assertThat(manager.schedulePersistedEvent(new EventLog()).await().indefinitely()).isNull();
+    void supports_delegatesToResolver() {
+        when(httpEndpointResolver.canResolve("endpoint-1", "t1")).thenReturn(true);
+        when(httpEndpointResolver.canResolve("endpoint-2", "t1")).thenReturn(false);
+
+        assertThat(manager.supports("endpoint-1", "t1")).isTrue();
+        assertThat(manager.supports("endpoint-2", "t1")).isFalse();
     }
 
     @Test
