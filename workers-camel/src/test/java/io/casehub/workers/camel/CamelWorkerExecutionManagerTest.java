@@ -57,8 +57,12 @@ class CamelWorkerExecutionManagerTest {
     }
 
     @Test
-    void schedulePersistedEvent_returnsVoid() {
-        assertThat(manager.schedulePersistedEvent(new EventLog()).await().indefinitely()).isNull();
+    void supports_delegatesToResolver() {
+        when(resolver.canResolve("route-1", "t1")).thenReturn(true);
+        when(resolver.canResolve("route-2", "t1")).thenReturn(false);
+
+        assertThat(manager.supports("route-1", "t1")).isTrue();
+        assertThat(manager.supports("route-2", "t1")).isFalse();
     }
 
     @Test
