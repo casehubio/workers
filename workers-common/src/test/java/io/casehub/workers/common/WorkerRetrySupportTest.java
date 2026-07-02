@@ -7,7 +7,6 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.casehub.platform.api.governance.BackoffStrategy;
-import io.casehub.worker.api.Capability;
 import io.casehub.platform.api.governance.ExecutionPolicy;
 import io.casehub.platform.api.governance.RetryPolicy;
 import io.casehub.worker.api.Worker;
@@ -68,7 +67,7 @@ class WorkerRetrySupportTest {
         @Test
         void workerWithDefaultExecutionPolicy_returnsItsRetryPolicy() {
             // Worker's default ExecutionPolicy() has new RetryPolicy() — should return it
-            Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             // default ExecutionPolicy sets retries = new RetryPolicy()
             RetryPolicy result = WorkerRetrySupport.resolveRetryPolicy(worker);
 
@@ -165,7 +164,7 @@ class WorkerRetrySupportTest {
         @Test
         void constructsCorrectEventLogAndCallsAppend() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -189,7 +188,7 @@ class WorkerRetrySupportTest {
         @Test
         void nullErrorMessage_usesUnknown() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
             when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -288,7 +287,7 @@ class WorkerRetrySupportTest {
     private static Worker testWorker(ExecutionPolicy policy) {
         Worker.Builder builder = Worker.builder()
             .name("test-worker")
-            .capabilities(List.of(Capability.of("cap", "", "")))
+            .capabilityNames("cap")
             .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())));
         if (policy != null) {
             builder.executionPolicy(policy);

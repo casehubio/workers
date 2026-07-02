@@ -162,6 +162,6 @@ public class WorkerRetrySupport {
     public void publishRetriesExhausted(UUID caseId, String workerId, String inputDataHash,
                                         String bindingName, String tenancyId) {
         eventBus.publish(EventBusAddresses.WORKER_RETRIES_EXHAUSTED,
-            new WorkerRetriesExhaustedEvent(caseId, workerId, inputDataHash, bindingName, tenancyId));
+            new WorkerRetriesExhaustedEvent(caseId, tenancyId, workerId, inputDataHash, bindingName, null));
     }
 }

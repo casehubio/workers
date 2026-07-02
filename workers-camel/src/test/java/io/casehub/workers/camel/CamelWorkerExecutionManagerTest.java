@@ -14,7 +14,6 @@ import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.camel.ProducerTemplate;
@@ -79,6 +78,6 @@ class CamelWorkerExecutionManagerTest {
     }
 
     private Worker testWorker() {
-        return Worker.builder().name("w1").capabilities(List.of(Capability.of("cap", "", ""))).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        return Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
     }
 }

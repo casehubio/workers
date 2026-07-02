@@ -10,7 +10,6 @@ import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.WorkerFaultHandler;
 import io.smallrye.mutiny.Uni;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -26,7 +25,7 @@ class GitHubActionsWorkerFaultEventHandlerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilities(List.of()).function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
         Capability capability = Capability.of("cap", "", "");
 
         WorkerFaultEvent event = new WorkerFaultEvent(

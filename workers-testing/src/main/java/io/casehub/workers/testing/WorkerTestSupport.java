@@ -5,7 +5,6 @@ import io.casehub.worker.api.Worker;
 import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,11 +26,8 @@ public final class WorkerTestSupport {
         return instance;
     }
 
-    public static Worker testWorker(String name, String... capabilityTags) {
-        List<Capability> caps = java.util.Arrays.stream(capabilityTags)
-            .map(tag -> Capability.of(tag, "", ""))
-            .toList();
-        return Worker.builder().name(name).capabilities(caps)
+    public static Worker testWorker(String name, String... capabilityNames) {
+        return Worker.builder().name(name).capabilityNames(capabilityNames)
             .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())))
             .build();
     }
