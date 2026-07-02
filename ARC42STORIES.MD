@@ -78,18 +78,21 @@ C4Context
     System(gha, "workers-github-actions", "GitHub Actions dispatch")
     System(mcp, "workers-mcp", "MCP tool dispatch")
     System(script, "workers-script", "Subprocess dispatch")
+    System(k8s, "workers-k8s", "K8s Job dispatch")
   }
   System_Ext(camel_ext, "Camel Routes\n(300+ connectors)", "Kafka, AMQP, S3, etc.")
   System_Ext(http_ext, "REST Endpoints", "Any HTTP service")
   System_Ext(gha_ext, "GitHub Actions", "workflow_dispatch\nrepository_dispatch")
   System_Ext(mcp_ext, "MCP Servers", "Streamable HTTP\ntools/call")
   System_Ext(script_ext, "Local Processes", "Shell, Python, JS")
+  System_Ext(k8s_ext, "K8s API Server", "fabric8 KubernetesClient\nJob watch/create/delete")
   Rel(engine, common, "SPI calls", "CDI")
   Rel(camel, camel_ext, "ProducerTemplate", "Camel")
   Rel(http, http_ext, "WebClient", "HTTPS")
   Rel(gha, gha_ext, "WebClient", "HTTPS")
   Rel(mcp, mcp_ext, "WebClient", "JSON-RPC/SSE")
   Rel(script, script_ext, "ProcessBuilder", "stdin/stdout")
+  Rel(k8s, k8s_ext, "KubernetesClient", "HTTPS")
 ```
 
 ### External Interfaces
@@ -101,6 +104,7 @@ C4Context
 | GitHub Actions API | Outbound | Vert.x WebClient (non-blocking) | Fire-and-forget (204 = done) |
 | MCP servers | Outbound | Vert.x WebClient (non-blocking) | Sync (JSON-RPC response or SSE) |
 | Local processes | Outbound | ProcessBuilder (blocking on worker pool) | Sync (exit code + stdout) |
+| K8s API Server | Outbound | fabric8 KubernetesClient (blocking) | Watch-based (informer) |
 | External callbacks | Inbound | REST `POST /workers/complete/{dispatchId}` | Async completion from external systems |
 
 ### Platform References
@@ -134,6 +138,7 @@ C4Context
 | L6 — GitHub Actions Dispatch | PAT-based auth, `workflow_dispatch` + `repository_dispatch`, fire-and-forget |
 | L7 — MCP Dispatch | Session lifecycle, `tools/list` discovery, dual JSON/SSE response parsing, Streamable HTTP |
 | L8 — Script Dispatch | Config-driven script definitions, ProcessBuilder, stdin JSON, bounded stdout/stderr capture |
+| L9 — K8s Dispatch | Informer-based Job watch, image/template Job construction, Pod log capture, TTL cleanup |
 
 ### Chapter Sequencing Rationale
 
@@ -157,6 +162,7 @@ C4Context
 | `workers-github-actions` | `casehub-workers-github-actions` | `workers-common`, `smallrye-mutiny-vertx-web-client` |
 | `workers-mcp` | `casehub-workers-mcp` | `workers-common`, `smallrye-mutiny-vertx-web-client` |
 | `workers-script` | `casehub-workers-script` | `workers-common` |
+| `workers-k8s` | `casehub-workers-k8s` | `workers-common`, `quarkus-kubernetes-client` |
 | `workers-testing` | `casehub-workers-testing` | Test scope only — shared test fixtures |
 
 ```mermaid
@@ -293,7 +299,7 @@ Published to GitHub Packages: `io.casehub:casehub-workers-*:0.2-SNAPSHOT`
 
 | Journey | Description | Chapters | Status |
 |---|---|---|---|
-| Worker Infrastructure | External execution runtime dispatch for CaseHub cases — five worker types plus shared infrastructure | 6 | ✅ Complete |
+| Worker Infrastructure | External execution runtime dispatch for CaseHub cases — six worker types plus shared infrastructure | 7 | ✅ Complete |
 
 ### §9.2 Chapter Index
 
@@ -305,19 +311,21 @@ Published to GitHub Packages: `io.casehub:casehub-workers-*:0.2-SNAPSHOT`
 | 4 | [MCP Worker](#chapter-4--mcp-worker) | Worker Infrastructure | L1 Low, L2 Medium, + L7 | High | ✅ |
 | 5 | [Worker Runtime Lifecycle + MCP Discovery](#chapter-5--worker-runtime-lifecycle--mcp-discovery) | Worker Infrastructure | + L3, L4–L7 Low | High | ✅ |
 | 6 | [Script Worker + Fault Pipeline Extraction](#chapter-6--script-worker--fault-pipeline-extraction) | Worker Infrastructure | L1 Low, L2 High, L3–L7 Low, + L8 | High | ✅ |
+| 7 | [Kubernetes Job Worker](#chapter-7--kubernetes-job-worker) | Worker Infrastructure | L1 Low, L2 Medium, L3 Low, + L9 | High | ✅ |
 
 **Layer × Chapter Matrix**
 
-| Layer | C1 | C2 | C3 | C4 | C5 | C6 |
-|---|---|---|---|---|---|---|
-| L1 — Shared Worker Infrastructure | High | Low | Low | Low | — | Low |
-| L2 — Fault Pipeline | Medium | Medium | Medium | Medium | — | High |
-| L3 — Worker Runtime Lifecycle | — | — | — | — | High | Low |
-| L4 — Camel Dispatch | High | — | — | — | Low | Low |
-| L5 — HTTP Dispatch | — | High | — | — | Low | Low |
-| L6 — GitHub Actions Dispatch | — | — | High | — | Low | Low |
-| L7 — MCP Dispatch | — | — | — | High | High | Low |
-| L8 — Script Dispatch | — | — | — | — | — | High |
+| Layer | C1 | C2 | C3 | C4 | C5 | C6 | C7 |
+|---|---|---|---|---|---|---|---|
+| L1 — Shared Worker Infrastructure | High | Low | Low | Low | — | Low | Low |
+| L2 — Fault Pipeline | Medium | Medium | Medium | Medium | — | High | Medium |
+| L3 — Worker Runtime Lifecycle | — | — | — | — | High | Low | Low |
+| L4 — Camel Dispatch | High | — | — | — | Low | Low | — |
+| L5 — HTTP Dispatch | — | High | — | — | Low | Low | — |
+| L6 — GitHub Actions Dispatch | — | — | High | — | Low | Low | — |
+| L7 — MCP Dispatch | — | — | — | High | High | Low | — |
+| L8 — Script Dispatch | — | — | — | — | — | High | — |
+| L9 — K8s Dispatch | — | — | — | — | — | — | High |
 
 L1 and L2 appear in every column — they bear cross-cutting responsibility. L4–L8 each have a single High column plus Low entries from lifecycle (C5) and fault extraction (C6) retrofits. The Low entries after introduction indicate stability.
 
@@ -327,6 +335,7 @@ L1 and L2 appear in every column — they bear cross-cutting responsibility. L4�
 - C3 before C4: shared fault exception vocabulary from C3 is a prerequisite
 - C4 before C5: C5 adds lifecycle SPI and `tools/list` discovery to the MCP worker built in C4
 - C5 before C6: C6 extracts the fault pipeline using the lifecycle SPI from C5; retrofits all five workers
+- C6 before C7: C7 builds on established patterns (generic fault pipeline, lifecycle SPI) from C6
 
 ```mermaid
 flowchart LR
@@ -335,12 +344,14 @@ flowchart LR
   C3 --> C4["C4: MCP\n+L7"]
   C4 --> C5["C5: Lifecycle SPI\n+L3"]
   C5 --> C6["C6: Script + Extraction\n+L8"]
+  C6 --> C7["C7: K8s Worker\n+L9"]
   style C1 fill:#90EE90,color:#000
   style C2 fill:#90EE90,color:#000
   style C3 fill:#90EE90,color:#000
   style C4 fill:#90EE90,color:#000
   style C5 fill:#90EE90,color:#000
   style C6 fill:#90EE90,color:#000
+  style C7 fill:#90EE90,color:#000
 ```
 
 ---
@@ -485,6 +496,29 @@ Cases dispatch work to local subprocesses — shell scripts, Python scripts, CLI
 | L6 — GitHub Actions Dispatch | Low (fault handler shrunk to 5-line stub) |
 | L7 — MCP Dispatch | Low (fault handler shrunk to 5-line stub) |
 | L8 — Script Dispatch | High |
+
+---
+
+#### Chapter 7 — Kubernetes Job Worker
+
+**Journey:** Worker Infrastructure | **Sequence:** 7 of 7 | **Status:** ✅
+**Delivered:** 2026-07-02 | **Issues:** #10 | **Blog:** —
+**Spec:** `docs/superpowers/specs/2026-07-01-casehub-workers-k8s-design.md` (approved)
+
+**What this delivers**
+Cases dispatch work to Kubernetes clusters as Jobs via the fabric8 client. The fundamental difference from all existing workers is the completion model: watch-based observation via a shared fabric8 informer, rather than synchronous response or callback-based completion. Image-based and template-based Job construction. Full K8s fault classification. Pod log output capture. Eager delete + TTL safety net cleanup.
+
+**Accountability gaps closed**
+- No Kubernetes Job dispatch → L9 K8s dispatch closes it
+- No informer-based watch completion model → `K8sJobInformerManager` + per-namespace informers close it
+
+**Layer Impact**
+| Layer | Delta |
+|---|---|
+| L1 — Shared Worker Infrastructure | Low (reuses `AsyncWorkerCompletionRegistry` for timeout detection) |
+| L2 — Fault Pipeline | Medium (K8s-specific fault classification — OOMKilled, ImagePullBackOff, DeadlineExceeded, eviction/preemption) |
+| L3 — Worker Runtime Lifecycle | Low (implements `WorkerRuntime` — informer start/stop) |
+| L9 — K8s Dispatch | High |
 
 ---
 
@@ -1019,6 +1053,8 @@ All other architectural decisions are documented inline in §9.4 layer entries.
 | `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe uses `ProvisionContext.tenancyId()` (engine#530 shipped, wired in #15) | ✅ Done |
 | Upstream SNAPSHOT break | `Worker` constructor went private — `Worker.builder()` required | Fixed in tests; `WorkerTestSupport` review pending if engine-api publishes | ✅ Mitigated |
 | No subprocess sandboxing (workers-script) | Script execution runs with JVM process privileges | Acceptable for trusted operator-configured scripts; external sandboxing (containers, seccomp) is a deployment concern | Accepted risk |
+| K8s worker restart recovery (#17) | In-memory registry lost on restart. Long-running K8s Jobs (hours) observed by stale-worker detection cause duplicate dispatch + wasted compute | Issue #17 tracks registry persistence or K8s-side recovery (re-list Jobs with managed-by label on startup) | Tracked |
+| K8s multi-cluster dispatch (#16) | Single-cluster only (Quarkus-injected `KubernetesClient`) | Issue #16 tracks multi-cluster support | Tracked |
 
 ---
 

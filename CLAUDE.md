@@ -34,6 +34,7 @@ mvn --batch-mode deploy -DskipTests
 | `workers-github-actions` | `casehub-workers-github-actions` | `io.casehub.workers.githubactions` | GitHub Actions worker — workflow_dispatch + repository_dispatch |
 | `workers-mcp` | `casehub-workers-mcp` | `io.casehub.workers.mcp` | MCP worker — dispatch case steps to MCP server tools via Streamable HTTP |
 | `workers-script` | `casehub-workers-script` | `io.casehub.workers.script` | Script worker — dispatch case steps to local subprocesses (shell, Python, JS) |
+| `workers-k8s` | `casehub-workers-k8s` | `io.casehub.workers.k8s` | Kubernetes Job worker — dispatch case steps as K8s Jobs via fabric8 client, watch-based completion |
 | `workers-testing` | `casehub-workers-testing` | `io.casehub.workers.testing` | Shared test fixtures — **test scope only, never compile/runtime** |
 
 Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each root package.
@@ -138,6 +139,23 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `ScriptReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver, command non-blank |
 | `ScriptWorkerRuntime` | `WorkerRuntime` implementation — delegates to `ScriptDefinitionResolver.initialize()`. Zero scripts → FAULTED |
 
+## workers-k8s Key Types
+
+| Type | Purpose |
+|------|---------|
+| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator |
+| `K8sWorkerEventBusAddresses.K8S_WORKER_FAULT` | Separate fault address from other workers |
+| `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
+| `CleanupPolicy` | `DELETE` (default) / `RETAIN` enum — eager delete + TTL safety net vs. manual cleanup |
+| `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier |
+| `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars |
+| `K8sJobOutputCapture` | Reads Pod logs after completion — lists Pods by `job-name` label, selects last Pod (handles `backoffLimit > 0`), bounded read at `maxOutputBytes`, JSON parsing (valid object → structured map; else → raw wrapper `{stdout, exitCode}`) |
+| `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — creates Job via `kubernetesClient.resource(job).create()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())` |
+| `K8sReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver |
+| `K8sWorkerRuntime` | `WorkerRuntime` implementation — validates K8s connectivity (`kubernetesClient.getApiVersion()`), starts per-namespace informers, FAULTED if no jobs configured or all informers failed |
+| `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
+| `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
+
 ## Key Rules
 
 - `workers-testing` is never a compile or runtime dependency — test scope only.
@@ -145,7 +163,7 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
 - Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
-- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
+- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `K8S_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
 - Fault pipeline is centralized in workers-common: `WorkerFaultPublisher` (parameterized by address), `WorkerFaultHandler` (shared retry body), `WorkerCompletionExpiryObserver` and `WorkerFaultCallbackObserver` (generic, route via `faultAddress` from `PendingCompletion`). Per-module fault handlers are 5-line stubs.
 - `WorkerFaultHandler` always uses `emitOn(Infrastructure.getDefaultWorkerPool())` before re-dispatch — correct for all workers regardless of whether their `submit()` is blocking or reactive. One unnecessary thread hop for reactive workers is negligible on the error path.
 - Retry logic via `WorkerRetrySupport`: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED).
@@ -170,6 +188,14 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - Script timeout → `PermanentFaultException` (diverges from HTTP/MCP where timeout is retryable). Rationale: subprocess that burned full timeout will timeout again; each retry wastes OS process + thread for full duration.
 - Script non-zero exit → `RuntimeException` (retryable). Command not found or working directory missing → `PermanentFaultException`.
 - Script stream draining: bounded read loop (8KB chunks, cap at `maxOutputBytes`, drain past cap to prevent SIGPIPE). Dedicated `ExecutorService` for stream draining — `@PostConstruct`/`@PreDestroy` lifecycle on execution manager.
+- K8s Job creation: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())` — fabric8 client API is blocking. Input size validated against `maxInputBytes` (default 256KB); etcd has ~1.5MB object size limit.
+- K8s completion model: watch-based via `SharedIndexInformer<Job>` per namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. `onAdd` handles reconnection (Jobs completed during watch disconnect); `onUpdate` handles terminal state; `onDelete` classifies TTL cleanup vs. external deletion.
+- K8s fault classification: `BackoffLimitExceeded` with `backoffLimit=0` (default) checks Pod reason; `backoffLimit>0` → permanent (K8s already retried). `DeadlineExceeded` → permanent (enriched with Pod waiting state if Pod never started). `OOMKilled`, `ImagePullBackOff`, `InvalidImageName`, `CreateContainerConfigError` → permanent. Pod eviction, preemption, node failure → retryable. API 403/404/422 → permanent; 409 conflict → retryable.
+- K8s cleanup: eager delete in `processTerminal()` if `cleanup != RETAIN`, plus `ttlSecondsAfterFinished` safety net (default 600s, minimum 300s).
+- K8s `backoffLimit` defaults to 0 — CaseHub's fault pipeline owns retry logic. With `backoffLimit=0` + `restartPolicy: Never`, any Pod failure surfaces immediately to CaseHub's fault handler.
+- K8s Job naming: `casehub-{slug}-{8-char-hex}` (max 57 chars). Slug: lowercase, replace `[^a-z0-9-]` with `-`, collapse consecutive `-`, truncate to 40 chars (if truncated, replace last 5 chars with 5-char hash of pre-truncation slug).
+- K8s invariants: `restartPolicy: Never` always enforced; labels `app.kubernetes.io/managed-by=casehub`, `casehub.io/dispatch-id`, `casehub.io/capability`, `casehub.io/tenancy-id`; env vars `CASEHUB_CASE_ID`, `CASEHUB_TENANCY_ID`, `CASEHUB_CAPABILITY`, `CASEHUB_IDEMPOTENCY`, `CASEHUB_INPUT_DATA` (JSON-serialized).
+- K8s template overlay order: `metadata.name`, `metadata.namespace`, `metadata.labels` (merge, CaseHub wins), `spec.backoffLimit`, `spec.activeDeadlineSeconds`, `spec.ttlSecondsAfterFinished`, `spec.template.spec.restartPolicy`, first container env vars (append CaseHub env vars).
 - EndpointRegistry resolution order: Tier 1 (SPI beans) > Tier 2 (config) > Tier 3 (EndpointRegistry). Single registry call with tenancyId — registry handles tenant → platform-global fallback internally. `capabilities()` stays static (SPI + config only).
 - EndpointRegistry path convention: HTTP uses `Path.of("http", capabilityTag)`, MCP uses `Path.of("mcp", serverName)`. Protocol check on descriptors: HTTP resolver accepts `EndpointProtocol.HTTP` only, MCP accepts `EndpointProtocol.MCP` only. Wrong protocol → ignored (returns empty), not faulted.
 - MCP firstMatch() for Tier 3: validates server existence via registry lookup, not individual tool existence. Tool validation deferred to dispatch time (same lazy pattern as 404 session recovery).
