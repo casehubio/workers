@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.casehub.platform.api.governance.RetryPolicy;
 import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.model.CaseInstance;
+import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
 import io.smallrye.mutiny.Uni;
@@ -73,19 +74,17 @@ public class WorkerFaultHandler {
     }
 
     private Uni<Void> reloadAndResubmit(WorkerFaultEvent event, long delayMs) {
-        return eventLogRepository
-            .findById(Long.parseLong(event.eventLogId()), event.caseInstance().tenancyId)
-            .flatMap(eventLog -> {
-                Map<String, Object> inputData =
-                    OBJECT_MAPPER.convertValue(eventLog.getPayload(), MAP_TYPE);
-                return Uni.createFrom().<Void>emitter(em -> {
-                        long timerId = vertx.setTimer(delayMs, id -> em.complete(null));
-                        em.onTermination(() -> vertx.cancelTimer(timerId));
-                    })
-                    .emitOn(Infrastructure.getDefaultWorkerPool())
-                    .flatMap(ignored -> workerExecutionManager.submit(
-                        Long.parseLong(event.eventLogId()),
-                        event.caseInstance(), event.worker(), event.capability(), inputData));
-            });
+        EventLog eventLog = eventLogRepository.findById(
+            Long.parseLong(event.eventLogId()), event.caseInstance().tenancyId);
+        Map<String, Object> inputData =
+            OBJECT_MAPPER.convertValue(eventLog.getPayload(), MAP_TYPE);
+        return Uni.createFrom().<Void>emitter(em -> {
+                long timerId = vertx.setTimer(delayMs, id -> em.complete(null));
+                em.onTermination(() -> vertx.cancelTimer(timerId));
+            })
+            .emitOn(Infrastructure.getDefaultWorkerPool())
+            .flatMap(ignored -> workerExecutionManager.submit(
+                Long.parseLong(event.eventLogId()),
+                event.caseInstance(), event.worker(), event.capability(), inputData));
     }
 }

@@ -1,32 +1,33 @@
 package io.casehub.workers.common;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
-
 import com.fasterxml.jackson.databind.JsonNode;
-import io.casehub.platform.api.governance.BackoffStrategy;
-import io.casehub.platform.api.governance.ExecutionPolicy;
-import io.casehub.platform.api.governance.RetryPolicy;
-import io.casehub.worker.api.Worker;
-import io.casehub.worker.api.WorkerFunction;
-import io.casehub.worker.api.WorkerResult;
 import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.engine.common.internal.event.EventBusAddresses;
 import io.casehub.engine.common.internal.event.WorkerRetriesExhaustedEvent;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
-import io.smallrye.mutiny.Uni;
+import io.casehub.platform.api.governance.BackoffStrategy;
+import io.casehub.platform.api.governance.ExecutionPolicy;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
+import io.casehub.worker.api.WorkerFunction;
+import io.casehub.worker.api.WorkerResult;
 import io.vertx.mutiny.core.eventbus.EventBus;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WorkerRetrySupportTest {
 
@@ -165,9 +166,6 @@ class WorkerRetrySupportTest {
         void constructsCorrectEventLogAndCallsAppend() {
             CaseInstance instance = testCaseInstance();
             Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-            when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
-                .thenReturn(Uni.createFrom().voidItem());
-
             support.persistFailureLog(instance, worker, "hash-abc", "Connection refused", "tenant-1")
                 .await().indefinitely();
 
@@ -189,9 +187,6 @@ class WorkerRetrySupportTest {
         void nullErrorMessage_usesUnknown() {
             CaseInstance instance = testCaseInstance();
             Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-            when(eventLogRepository.append(any(EventLog.class), eq("tenant-1")))
-                .thenReturn(Uni.createFrom().voidItem());
-
             support.persistFailureLog(instance, worker, "hash-abc", null, "tenant-1")
                 .await().indefinitely();
 
@@ -233,7 +228,7 @@ class WorkerRetrySupportTest {
 
             when(eventLogRepository.findByCaseAndWorkerAndType(
                     caseId, "w1", CaseHubEventType.WORKER_EXECUTION_FAILED, "t1"))
-                .thenReturn(Uni.createFrom().item(List.of(matching, nonMatching, noMeta)));
+                .thenReturn(List.of(matching, nonMatching, noMeta));
 
             long count = support.countFailedAttempts(caseId, "w1", "hash-1", "t1")
                 .await().indefinitely();
@@ -246,7 +241,7 @@ class WorkerRetrySupportTest {
             UUID caseId = UUID.randomUUID();
             when(eventLogRepository.findByCaseAndWorkerAndType(
                     caseId, "w1", CaseHubEventType.WORKER_EXECUTION_FAILED, "t1"))
-                .thenReturn(Uni.createFrom().item(List.of()));
+                .thenReturn(List.of());
 
             long count = support.countFailedAttempts(caseId, "w1", "hash-1", "t1")
                 .await().indefinitely();

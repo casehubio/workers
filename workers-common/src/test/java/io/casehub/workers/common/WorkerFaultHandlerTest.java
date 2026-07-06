@@ -99,7 +99,7 @@ class WorkerFaultHandlerTest {
         ObjectNode payload = OBJECT_MAPPER.createObjectNode().put("key", "value");
         eventLog.setPayload(payload);
         when(eventLogRepository.findById(42L, instance.tenancyId))
-            .thenReturn(Uni.createFrom().item(eventLog));
+            .thenReturn(eventLog);
 
         when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any()))
             .thenReturn(Uni.createFrom().voidItem());
@@ -160,7 +160,7 @@ class WorkerFaultHandlerTest {
         ObjectNode payload = OBJECT_MAPPER.createObjectNode().put("key", "value");
         eventLog.setPayload(payload);
         when(eventLogRepository.findById(42L, instance.tenancyId))
-            .thenReturn(Uni.createFrom().item(eventLog));
+            .thenReturn(eventLog);
 
         when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any()))
             .thenReturn(Uni.createFrom().voidItem());

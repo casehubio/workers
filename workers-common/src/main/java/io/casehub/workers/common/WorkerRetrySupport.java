@@ -2,10 +2,6 @@ package io.casehub.workers.common;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.platform.api.governance.BackoffStrategy;
-import io.casehub.platform.api.governance.ExecutionPolicy;
-import io.casehub.platform.api.governance.RetryPolicy;
-import io.casehub.worker.api.Worker;
 import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.api.model.event.EventStreamType;
 import io.casehub.engine.common.internal.event.EventBusAddresses;
@@ -13,16 +9,20 @@ import io.casehub.engine.common.internal.event.WorkerRetriesExhaustedEvent;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
+import io.casehub.platform.api.governance.BackoffStrategy;
+import io.casehub.platform.api.governance.ExecutionPolicy;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
 import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -135,7 +135,8 @@ public class WorkerRetrySupport {
             .put("inputDataHash", inputDataHash)
             .put("errorMessage", msg));
 
-        return eventLogRepository.append(failureLog, tenancyId);
+        eventLogRepository.append(failureLog, tenancyId);
+        return Uni.createFrom().voidItem();
     }
 
     /**
@@ -144,15 +145,16 @@ public class WorkerRetrySupport {
      */
     public Uni<Long> countFailedAttempts(UUID caseId, String workerId,
                                           String inputDataHash, String tenancyId) {
-        return eventLogRepository
+        long count = eventLogRepository
             .findByCaseAndWorkerAndType(caseId, workerId, CaseHubEventType.WORKER_EXECUTION_FAILED, tenancyId)
-            .map(logs -> logs.stream()
-                .filter(log -> {
-                    JsonNode meta = log.getMetadata();
-                    JsonNode node = meta == null ? null : meta.get("inputDataHash");
-                    return node != null && inputDataHash.equals(node.asText());
-                })
-                .count());
+            .stream()
+            .filter(log -> {
+                JsonNode meta = log.getMetadata();
+                JsonNode node = meta == null ? null : meta.get("inputDataHash");
+                return node != null && inputDataHash.equals(node.asText());
+            })
+            .count();
+        return Uni.createFrom().item(count);
     }
 
     /**
