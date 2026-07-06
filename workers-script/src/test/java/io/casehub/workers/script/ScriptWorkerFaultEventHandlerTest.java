@@ -30,7 +30,7 @@ class ScriptWorkerFaultEventHandlerTest {
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, capability, "hash-1", "1",
-            new RuntimeException("script failed"));
+            new RuntimeException("script failed"), null);
 
         when(faultHandler.handleFault(event)).thenReturn(Uni.createFrom().voidItem());
 

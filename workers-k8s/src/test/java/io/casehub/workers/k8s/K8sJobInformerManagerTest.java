@@ -412,7 +412,7 @@ class K8sJobInformerManagerTest {
         Worker worker = Worker.builder().name("w1")
             .capabilityName("k8s:test")
             .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1", null);
         return new PendingCompletion(dispatchId, K8sWorkerConstants.WORKER_TYPE,
             K8sWorkerEventBusAddresses.K8S_WORKER_FAULT, ctx, "token-1",
             capability, 1L,
@@ -438,6 +438,20 @@ class K8sJobInformerManagerTest {
         labels.put(K8sWorkerConstants.EVENT_LOG_ID_LABEL, String.valueOf(eventLogId));
         labels.put(K8sWorkerConstants.IDEMPOTENCY_LABEL, idempotency);
         job.getMetadata().setLabels(labels);
+        return job;
+    }
+
+    private Job buildRecoverableJobWithAnnotation(String namespace, String name,
+            String dispatchId, String conditionType, UUID caseId, String tenancyId,
+            String workerName, String capability, Long eventLogId, String idempotency,
+            String bindingName) {
+        Job job = buildRecoverableJob(namespace, name, dispatchId, conditionType,
+            caseId, tenancyId, workerName, capability, eventLogId, idempotency);
+        if (bindingName != null) {
+            Map<String, String> annotations = new LinkedHashMap<>();
+            annotations.put(K8sWorkerConstants.BINDING_NAME_ANNOTATION, bindingName);
+            job.getMetadata().setAnnotations(annotations);
+        }
         return job;
     }
 
@@ -516,5 +530,35 @@ class K8sJobInformerManagerTest {
         manager.processTerminal(job, "dispatch-5");
 
         verifyNoInteractions(completionPublisher, faultPublisher);
+    }
+
+    // --- bindingName annotation recovery tests ---
+
+    @Test
+    void recoverFromJob_readsBindingNameAnnotation() {
+        Job job = buildRecoverableJobWithAnnotation("batch", "casehub-test-abc",
+            "dispatch-6", "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L,
+            "idem-hash", "recovered-binding");
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(testCaseInstance);
+
+        Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-6");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().correlationContext().bindingName()).isEqualTo("recovered-binding");
+    }
+
+    @Test
+    void recoverFromJob_preUpgradeJob_nullBindingName() {
+        Job job = buildRecoverableJob("batch", "casehub-test-abc", "dispatch-7",
+            "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
+        // No annotation — pre-upgrade Job
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(testCaseInstance);
+
+        Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-7");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().correlationContext().bindingName()).isNull();
     }
 }

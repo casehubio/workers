@@ -41,7 +41,7 @@ public class WorkerFaultHandler {
                 if (event.cause() instanceof PermanentFaultException) {
                     retrySupport.publishRetriesExhausted(
                         instance.getUuid(), worker.name(), inputDataHash,
-                        worker.name(), tenancyId);
+                        event.bindingName(), tenancyId);
                     return Uni.createFrom().voidItem();
                 }
 
@@ -61,7 +61,7 @@ public class WorkerFaultHandler {
                         } else {
                             retrySupport.publishRetriesExhausted(
                                 instance.getUuid(), worker.name(), inputDataHash,
-                                worker.name(), tenancyId);
+                                event.bindingName(), tenancyId);
                             return Uni.createFrom().voidItem();
                         }
                     });
@@ -85,6 +85,7 @@ public class WorkerFaultHandler {
             .emitOn(Infrastructure.getDefaultWorkerPool())
             .flatMap(ignored -> workerExecutionManager.submit(
                 Long.parseLong(event.eventLogId()),
-                event.caseInstance(), event.worker(), event.capability(), inputData));
+                event.caseInstance(), event.worker(), event.capability(), inputData,
+                event.bindingName()));
     }
 }

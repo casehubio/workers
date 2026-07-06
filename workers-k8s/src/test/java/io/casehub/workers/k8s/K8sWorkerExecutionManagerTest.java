@@ -188,6 +188,44 @@ class K8sWorkerExecutionManagerTest {
         assertThat(captor.getValue().getMessage()).contains("exceeds maxInputBytes");
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughFault() {
+        resolver.initialize(Map.of());
+
+        manager.submit(1L,
+            WorkerTestSupport.testCaseInstance(),
+            WorkerTestSupport.testWorker("w1", "k8s:missing"),
+            WorkerTestSupport.testCapability("k8s:missing"),
+            Map.of(), "binding-x").await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+            ctxCaptor.capture(), any(Capability.class), eq(1L),
+            any(PermanentFaultException.class));
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        resolver.initialize(Map.of());
+
+        manager.submit(1L,
+            WorkerTestSupport.testCaseInstance(),
+            WorkerTestSupport.testWorker("w1", "k8s:missing"),
+            WorkerTestSupport.testCapability("k8s:missing"),
+            Map.of()).await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+            ctxCaptor.capture(), any(Capability.class), eq(1L),
+            any(PermanentFaultException.class));
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     @Test
     void supports_delegatesToResolver() {
         resolver.initialize(Map.of("x", imageDef("x")));
@@ -254,6 +292,71 @@ class K8sWorkerExecutionManagerTest {
         manager.schedulePersistedEvent(eventLog).await().indefinitely();
 
         verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    // --- bindingName in schedulePersistedEvent ---
+
+    @Test
+    void schedulePersistedEvent_readsBindingNameFromMetadata() {
+        resolver.initialize(Map.of("test", imageDef("test")));
+        EventLog eventLog = buildScheduledEventLogWithBindingName(CASE_ID, "t1", "w1",
+            "k8s:test", 1L, "spe-binding");
+        CaseInstance instance = WorkerTestSupport.testCaseInstance("t1");
+        instance.setUuid(CASE_ID);
+
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(instance);
+        mockK8sJobListEmpty();
+        mockJobCreation();
+
+        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
+            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+            ctxCaptor.capture(), any(), eq(1L), any(Duration.class), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("spe-binding");
+    }
+
+    @Test
+    void schedulePersistedEvent_noBindingNameInMetadata_passesNull() {
+        resolver.initialize(Map.of("test", imageDef("test")));
+        EventLog eventLog = buildScheduledEventLog(CASE_ID, "t1", "w1", "k8s:test", 1L);
+        CaseInstance instance = WorkerTestSupport.testCaseInstance("t1");
+        instance.setUuid(CASE_ID);
+
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(instance);
+        mockK8sJobListEmpty();
+        mockJobCreation();
+
+        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
+            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+            ctxCaptor.capture(), any(), eq(1L), any(Duration.class), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
+    private EventLog buildScheduledEventLogWithBindingName(UUID caseId, String tenancyId,
+            String workerName, String capabilityName, Long eventLogId, String bindingName) {
+        EventLog eventLog = new EventLog();
+        eventLog.setCaseId(caseId);
+        eventLog.tenancyId = tenancyId;
+        eventLog.id = eventLogId;
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            eventLog.setMetadata(mapper.readTree(
+                "{\"workerName\":\"" + workerName + "\",\"capabilityName\":\"" + capabilityName
+                    + "\",\"bindingName\":\"" + bindingName + "\"}"));
+            eventLog.setPayload(mapper.readTree("{\"key\":\"value\"}"));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return eventLog;
     }
 
     private EventLog buildScheduledEventLog(UUID caseId, String tenancyId,

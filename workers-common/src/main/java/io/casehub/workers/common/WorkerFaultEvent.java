@@ -10,4 +10,5 @@ public record WorkerFaultEvent(
     Capability capability,
     String inputDataHash,
     String eventLogId,
-    Throwable cause) {}
+    Throwable cause,
+    String bindingName) {}

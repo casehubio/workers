@@ -499,6 +499,52 @@ class GitHubActionsWorkerExecutionManagerTest {
         verify(request, never()).putHeader(eq("X-CaseHub-Case-Id"), anyString());
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughCompletion() {
+        HttpResponse<Buffer> response = mockResponse(204);
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w",
+            GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH);
+        Capability cap = WorkerTestSupport.testCapability(
+            GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH);
+
+        manager.submit(1L, instance, worker, cap,
+            Map.of("owner", "casehubio", "repo", "devtown",
+                   "workflow_id", "ci.yml", "ref", "main"), "binding-x")
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        HttpResponse<Buffer> response = mockResponse(204);
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w",
+            GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH);
+        Capability cap = WorkerTestSupport.testCapability(
+            GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH);
+
+        manager.submit(1L, instance, worker, cap,
+            Map.of("owner", "casehubio", "repo", "devtown",
+                   "workflow_id", "ci.yml", "ref", "main"))
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     @Test
     void supports_returnsTrueForBothCapabilities() {
         assertThat(manager.supports(GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH, "t1")).isTrue();

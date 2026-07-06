@@ -55,6 +55,40 @@ class CamelWorkerExecutionManagerTest {
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), any(WorkerProvisioningException.class));
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughFault() {
+        CaseInstance instance = testInstance();
+        Worker worker = testWorker();
+        Capability cap = Capability.of("missing", "", "");
+        when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
+
+        manager.submit(1L, instance, worker, cap, Map.of(), "binding-x").await().indefinitely();
+
+        org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+            ctxCaptor.capture(), eq(cap), eq(1L), any(WorkerProvisioningException.class));
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        CaseInstance instance = testInstance();
+        Worker worker = testWorker();
+        Capability cap = Capability.of("missing", "", "");
+        when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
+
+        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+
+        org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+            ctxCaptor.capture(), eq(cap), eq(1L), any(WorkerProvisioningException.class));
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     @Test
     void supports_delegatesToResolver() {
         when(resolver.canResolve("route-1", "t1")).thenReturn(true);

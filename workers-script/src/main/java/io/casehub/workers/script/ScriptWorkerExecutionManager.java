@@ -72,18 +72,25 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         ScriptDefinition definition;
         try {
             definition = scriptDefinitionResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
-            WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+            WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
             faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
                 ctx, capability, eventLogId,
                 new PermanentFaultException(0, e.getMessage()));
             return Uni.createFrom().voidItem();
         }
 
-        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
         return Uni.createFrom()
             .item(() -> executeProcess(definition, inputData, ctx, capability))
@@ -242,9 +249,10 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
 
     private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
                                               Capability capability,
-                                              Map<String, Object> inputData) {
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
             instance.getUuid(), worker.name(), capability.name(), inputData);
-        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 }

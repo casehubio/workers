@@ -78,7 +78,7 @@ class AsyncWorkerCompletionRegistryTest {
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
         Worker worker = Worker.builder().name("test-worker").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        return new WorkerCorrelationContext(instance, worker, "hash", "t1");
+        return new WorkerCorrelationContext(instance, worker, "hash", "t1", null);
     }
 
     private Capability testCapability() {

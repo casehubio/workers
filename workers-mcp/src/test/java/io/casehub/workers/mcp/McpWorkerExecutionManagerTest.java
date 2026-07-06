@@ -371,6 +371,50 @@ class McpWorkerExecutionManagerTest {
         assertThat(manager.getActiveWorkCount("any")).isEqualTo(0);
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughCompletion() {
+        String jsonRpcResponse = """
+            {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"ok"}]}}""";
+        HttpResponse<Buffer> response = mockJsonResponse(200, jsonRpcResponse);
+        when(response.getHeader("Content-Type")).thenReturn("application/json");
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w", CAP_TAG);
+        Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
+
+        manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"), "binding-x")
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        String jsonRpcResponse = """
+            {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"ok"}]}}""";
+        HttpResponse<Buffer> response = mockJsonResponse(200, jsonRpcResponse);
+        when(response.getHeader("Content-Type")).thenReturn("application/json");
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w", CAP_TAG);
+        Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
+
+        manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     // --- test helpers ---
 
     private HttpResponse<Buffer> mockResponse(int status) {

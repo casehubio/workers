@@ -7,5 +7,6 @@ public record WorkerCorrelationContext(
     CaseInstance caseInstance,
     Worker worker,
     String idempotency,
-    String tenancyId
+    String tenancyId,
+    String bindingName
 ) {}

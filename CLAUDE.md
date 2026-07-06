@@ -57,7 +57,7 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `PendingCompletion` | Registry entry per async dispatch — carries `dispatchId`, `workerType`, `faultAddress`, `callbackToken`, `capability`, `eventLogId`. Self-routing: `faultAddress` enables generic observers without per-module filtering |
-| `WorkerCorrelationContext` | Per-dispatch context — `CaseInstance`, `Worker`, `idempotency`, `tenancyId` |
+| `WorkerCorrelationContext` | Per-dispatch context — `CaseInstance`, `Worker`, `idempotency`, `tenancyId`, `bindingName`. `bindingName` is nullable — null means engine falls back to `findMatchingCapabilityBinding()` |
 | `AsyncWorkerCompletionRegistry` | In-memory pending completion store; `expireStale()` fires `CompletionExpiredEvent` CDI async |
 | `WorkflowCompletionPublisher` | Fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` via `eventBus.publish()` |
 | `WorkerCallbackResource` | `POST /workers/complete/{dispatchId}` — REST callback for external systems |
@@ -71,9 +71,9 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `WorkerRuntimeStatus` | `PENDING` → `RUNNING` → `STOPPED`, `PENDING` → `FAULTED` → `STOPPED`, `FAULTED` → `RUNNING` (recovery). Aligned with SW 1.0 vocabulary |
 | `WorkerLifecycleOrchestrator` | `@ApplicationScoped` — discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
 | `WorkerCapabilityResolver<T>` | Tenancy-aware endpoint resolution SPI — `resolve(capabilityTag, tenancyId)`, `firstMatch(capabilities, tenancyId)`, `capabilities()`. All four worker types implement this. HTTP and MCP add EndpointRegistry as Tier 3; Camel and Script pass tenancyId through |
-| `WorkerFaultEvent` | Local fault event record — `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`. Replaces engine-common's deleted `WorkflowExecutionFailed` (GE-20260618-a50133) |
+| `WorkerFaultEvent` | Local fault event record — `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`, `bindingName`. `bindingName` propagated from `WorkerCorrelationContext` via `WorkerFaultPublisher` so the fault handler can thread it through retry re-dispatch and retries-exhausted |
 | `WorkerFaultPublisher` | Generic fault publisher — parameterized by fault address. Publishes `WorkerFaultEvent`. Two overloads: `fault(faultAddress, ctx, capability, eventLogId, cause)` and `fault(pending, cause)` |
-| `WorkerFaultHandler` | Shared fault handler body — persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Always uses `emitOn(workerPool)` before re-dispatch. Per-module fault event handlers are 5-line stubs delegating here |
+| `WorkerFaultHandler` | Shared fault handler body — persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Always uses `emitOn(workerPool)` before re-dispatch. Uses `event.bindingName()` for retry re-dispatch (6-arg `submit()`) and `publishRetriesExhausted()`. Per-module fault event handlers are 5-line stubs delegating here |
 | `WorkerCompletionExpiryObserver` | Generic `@ObservesAsync CompletionExpiredEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module expiry observers |
 | `WorkerFaultCallbackObserver` | Generic `@ObservesAsync FaultCallbackEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module callback observers |
 
@@ -143,12 +143,12 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 
 | Type | Purpose |
 |------|---------|
-| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata |
+| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata. Annotation constant: `BINDING_NAME_ANNOTATION` — annotation (not label) because `bindingName` is user-defined and may exceed 63-char label limit |
 | `K8sWorkerEventBusAddresses.K8S_WORKER_FAULT` | Separate fault address from other workers |
 | `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
 | `CleanupPolicy` | `DELETE` (default) / `RETAIN` enum — eager delete + TTL safety net vs. manual cleanup |
 | `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier. `@PostConstruct` eager initialization from Config — eliminates race between engine recovery and worker initialization |
-| `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars |
+| `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars. Adds `bindingName` as annotation when non-null |
 | `K8sJobOutputCapture` | Reads Pod logs after completion — lists Pods by `job-name` label, selects last Pod (handles `backoffLimit > 0`), bounded read at `maxOutputBytes`, JSON parsing (valid object → structured map; else → raw wrapper `{stdout, exitCode}`) |
 | `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — creates Job via `kubernetesClient.resource(job).create()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())`. Implements `schedulePersistedEvent()` for restart recovery, injects `CaseInstanceRepository` |
 | `K8sReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver |
@@ -207,6 +207,9 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - K8s `schedulePersistedEvent()`: checks K8s for existing Job (label selector with case-id, capability, worker-name). If found → voidItem (informer handles). If not found → re-dispatches via `submit()`.
 - K8s Job labels carry recovery metadata: `casehub.io/case-id`, `casehub.io/worker-name`, `casehub.io/event-log-id`, `casehub.io/idempotency`. Pre-upgrade Jobs lacking these labels cannot be recovered — they expire via `ttlSecondsAfterFinished`.
 - `JobDefinitionResolver` initializes eagerly via `@PostConstruct` — `capabilities()` returns correct results before any startup observer fires. Eliminates race between engine recovery (`@Priority(22)`) and worker initialization (`@Priority(APPLICATION + 10)`).
+- `bindingName` propagated end-to-end: `WorkerCorrelationContext.bindingName()` → `WorkflowCompletionPublisher` → `WorkflowExecutionCompleted.bindingName()`. Null until casehubio/engine#676 ships (engine calls 6-arg `submit()`).
+- `bindingName` propagated through fault pipeline: `WorkerCorrelationContext` → `WorkerFaultPublisher` → `WorkerFaultEvent.bindingName()` → `WorkerFaultHandler` → retry re-dispatch (6-arg `submit()`) and `publishRetriesExhausted()`.
+- K8s `bindingName` uses annotation (`casehub.io/binding-name`), not label — user-defined values may exceed 63-char label limit. Recovery reads from `job.getMetadata().getAnnotations()` (null-safe for pre-upgrade Jobs).
 
 ## Co-deployment
 
@@ -223,6 +226,7 @@ All worker modules can co-deploy on the same classpath. `CompositeWorkerExecutio
 | ~~engine#461~~ | ~~Composite `WorkerExecutionManager`~~ — shipped, all backends migrated to `@WorkerBackend` |
 | ~~engine#530~~ | ~~Add `tenancyId` to `ProvisionContext`~~ — shipped, wired in #15 |
 | ~~engine#531~~ | ~~Remove `getCapabilities()` hard gate in `tryProvision()`~~ — shipped, no workers-side changes needed |
+| engine#676 | Add `bindingName` parameter to `WorkerExecutionManager.submit()` — default method overload, `CompositeWorkerExecutionManager` routing, `WorkerScheduleEventHandler.submitIfNeeded()` call site |
 
 ## Cross-Repo Conventions
 

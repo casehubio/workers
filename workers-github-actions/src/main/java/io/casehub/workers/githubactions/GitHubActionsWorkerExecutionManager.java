@@ -48,6 +48,13 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         String capTag = capability.name();
         boolean isWorkflowDispatch = GitHubActionsWorkerConstants.CAPABILITY_WORKFLOW_DISPATCH.equals(capTag);
 
@@ -55,7 +62,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
         String repo = stringField(inputData, "repo");
         if (owner == null || repo == null) {
             faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
-                buildCtx(instance, worker, capability, inputData),
+                buildCtx(instance, worker, capability, inputData, bindingName),
                 capability, eventLogId,
                 new PermanentFaultException(0, "Missing required inputData: owner, repo"));
             return Uni.createFrom().voidItem();
@@ -69,7 +76,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
             String ref = stringField(inputData, "ref");
             if (workflowId == null || ref == null) {
                 faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
-                    buildCtx(instance, worker, capability, inputData),
+                    buildCtx(instance, worker, capability, inputData, bindingName),
                     capability, eventLogId,
                     new PermanentFaultException(0,
                         "Missing required inputData for workflow-dispatch: workflow_id, ref"));
@@ -87,7 +94,7 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
             String eventType = stringField(inputData, "event_type");
             if (eventType == null) {
                 faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
-                    buildCtx(instance, worker, capability, inputData),
+                    buildCtx(instance, worker, capability, inputData, bindingName),
                     capability, eventLogId,
                     new PermanentFaultException(0,
                         "Missing required inputData for repository-dispatch: event_type"));
@@ -107,12 +114,12 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
             token = tokenResolver.resolve(owner);
         } catch (PermanentFaultException e) {
             faultPublisher.fault(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT,
-                buildCtx(instance, worker, capability, inputData),
+                buildCtx(instance, worker, capability, inputData, bindingName),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
-        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
         HttpRequest<Buffer> request = webClient.requestAbs(HttpMethod.POST, url);
         request.putHeader("Authorization", "Bearer " + token);
@@ -165,10 +172,11 @@ public class GitHubActionsWorkerExecutionManager implements WorkerExecutionManag
 
     private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
                                               Capability capability,
-                                              Map<String, Object> inputData) {
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
             instance.getUuid(), worker.name(), capability.name(), inputData);
-        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 
     private static String stringField(Map<String, Object> data, String key) {

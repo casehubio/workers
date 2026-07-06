@@ -64,6 +64,13 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         String capTag = capability.name();
         String serverName = McpServerResolver.parseServerName(capTag);
         String toolName = McpServerResolver.parseToolName(capTag);
@@ -74,13 +81,13 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
             server = serverResolver.resolve(capTag, instance.tenancyId);
         } catch (Exception e) {
             faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT,
-                buildCtx(instance, worker, capability, inputData),
+                buildCtx(instance, worker, capability, inputData, bindingName),
                 capability, eventLogId,
                 new PermanentFaultException(0, e.getMessage()));
             return Uni.createFrom().voidItem();
         }
 
-        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
         return sessionManager.getOrInitialize(serverName)
             .flatMap(session -> {
@@ -265,9 +272,10 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
 
     private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
                                               Capability capability,
-                                              Map<String, Object> inputData) {
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
             instance.getUuid(), worker.name(), capability.name(), inputData);
-        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 }

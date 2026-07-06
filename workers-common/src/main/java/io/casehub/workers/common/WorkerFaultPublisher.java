@@ -15,7 +15,7 @@ public class WorkerFaultPublisher {
                       Capability capability, Long eventLogId, Throwable cause) {
         eventBus.publish(faultAddress, new WorkerFaultEvent(
             ctx.caseInstance(), ctx.worker(), capability,
-            ctx.idempotency(), eventLogId.toString(), cause));
+            ctx.idempotency(), eventLogId.toString(), cause, ctx.bindingName()));
     }
 
     public void fault(PendingCompletion pending, Throwable cause) {
@@ -25,6 +25,7 @@ public class WorkerFaultPublisher {
             pending.capability(),
             pending.correlationContext().idempotency(),
             pending.eventLogId().toString(),
-            cause));
+            cause,
+            pending.correlationContext().bindingName()));
     }
 }

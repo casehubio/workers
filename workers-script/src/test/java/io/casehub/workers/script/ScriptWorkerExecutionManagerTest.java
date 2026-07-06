@@ -212,6 +212,48 @@ class ScriptWorkerExecutionManagerTest {
             any(Capability.class), eq(1L), any(PermanentFaultException.class));
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughCompletion() {
+        resolver.initialize(Map.of(
+            "echo-script", new ScriptDefinition("echo-script", "/bin/sh",
+                List.of("-c", "echo '{\"result\":\"ok\"}'"),
+                null, Map.of(), 30, 1_048_576)
+        ));
+
+        manager.submit(1L,
+            WorkerTestSupport.testCaseInstance(),
+            WorkerTestSupport.testWorker("w1", "script:echo-script"),
+            WorkerTestSupport.testCapability("script:echo-script"),
+            Map.of(), "binding-x").await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        resolver.initialize(Map.of(
+            "echo-script2", new ScriptDefinition("echo-script2", "/bin/sh",
+                List.of("-c", "echo '{\"result\":\"ok\"}'"),
+                null, Map.of(), 30, 1_048_576)
+        ));
+
+        manager.submit(1L,
+            WorkerTestSupport.testCaseInstance(),
+            WorkerTestSupport.testWorker("w1", "script:echo-script2"),
+            WorkerTestSupport.testCapability("script:echo-script2"),
+            Map.of()).await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     @Test
     void supports_delegatesToResolver() {
         resolver.initialize(Map.of(

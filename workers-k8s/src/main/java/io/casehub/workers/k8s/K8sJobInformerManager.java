@@ -175,6 +175,10 @@ public class K8sJobInformerManager {
         String eventLogIdStr = labels.get(K8sWorkerConstants.EVENT_LOG_ID_LABEL);
         String idempotency = labels.get(K8sWorkerConstants.IDEMPOTENCY_LABEL);
 
+        Map<String, String> annotations = job.getMetadata().getAnnotations();
+        String bindingName = annotations != null
+            ? annotations.get(K8sWorkerConstants.BINDING_NAME_ANNOTATION) : null;
+
         if (caseIdStr == null || workerName == null || idempotency == null) {
             LOG.warnf("Job %s/%s missing recovery labels — cannot recover (pre-upgrade Job?)",
                 job.getMetadata().getNamespace(), job.getMetadata().getName());
@@ -204,7 +208,7 @@ public class K8sJobInformerManager {
             .noFunction()
             .build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(
-            caseInstance, worker, idempotency, tenancyId);
+            caseInstance, worker, idempotency, tenancyId, bindingName);
 
         Map<String, String> provisionerMeta;
         try {

@@ -25,19 +25,23 @@ public final class K8sJobBuilder {
     public static Job build(JobDefinition definition, String dispatchId,
                             String caseId, String tenancyId, String capabilityTag,
                             String idempotency, String inputDataJson,
-                            String workerName, Long eventLogId) {
+                            String workerName, Long eventLogId,
+                            String bindingName) {
         if (definition.template() != null && !definition.template().isBlank()) {
             return buildFromTemplate(definition, dispatchId, caseId, tenancyId,
-                capabilityTag, idempotency, inputDataJson, workerName, eventLogId);
+                capabilityTag, idempotency, inputDataJson, workerName, eventLogId,
+                bindingName);
         }
         return buildFromImage(definition, dispatchId, caseId, tenancyId,
-            capabilityTag, idempotency, inputDataJson, workerName, eventLogId);
+            capabilityTag, idempotency, inputDataJson, workerName, eventLogId,
+            bindingName);
     }
 
     private static Job buildFromImage(JobDefinition def, String dispatchId,
                                        String caseId, String tenancyId,
                                        String capabilityTag, String idempotency,
-                                       String inputDataJson, String workerName, Long eventLogId) {
+                                       String inputDataJson, String workerName,
+                                       Long eventLogId, String bindingName) {
         String jobName = generateJobName(def.name());
         Map<String, String> labels = buildLabels(def, dispatchId, capabilityTag, tenancyId,
             caseId, workerName, eventLogId, idempotency);
@@ -89,13 +93,20 @@ public final class K8sJobBuilder {
                 .endSpec().endTemplate().endSpec();
         }
 
+        if (bindingName != null) {
+            builder.editMetadata()
+                .addToAnnotations(K8sWorkerConstants.BINDING_NAME_ANNOTATION, bindingName)
+                .endMetadata();
+        }
+
         return builder.build();
     }
 
     private static Job buildFromTemplate(JobDefinition def, String dispatchId,
                                           String caseId, String tenancyId,
                                           String capabilityTag, String idempotency,
-                                          String inputDataJson, String workerName, Long eventLogId) {
+                                          String inputDataJson, String workerName,
+                                          Long eventLogId, String bindingName) {
         InputStream is = Thread.currentThread().getContextClassLoader()
             .getResourceAsStream(def.template());
         if (is == null) {
@@ -116,6 +127,17 @@ public final class K8sJobBuilder {
             job.getMetadata().setLabels(merged);
         } else {
             job.getMetadata().setLabels(labels);
+        }
+
+        if (bindingName != null) {
+            Map<String, String> annotations = job.getMetadata().getAnnotations();
+            if (annotations == null) {
+                annotations = new LinkedHashMap<>();
+            } else {
+                annotations = new LinkedHashMap<>(annotations);
+            }
+            annotations.put(K8sWorkerConstants.BINDING_NAME_ANNOTATION, bindingName);
+            job.getMetadata().setAnnotations(annotations);
         }
 
         job.getSpec().setBackoffLimit(def.backoffLimit());

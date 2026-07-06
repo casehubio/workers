@@ -26,7 +26,7 @@ class WorkflowCompletionPublisherTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Map<String, Object> output = Map.of("result", "ok");
 
         publisher.complete(ctx, output);
@@ -40,5 +40,43 @@ class WorkflowCompletionPublisherTest {
         assertThat(event.worker()).isSameAs(worker);
         assertThat(event.idempotency()).isEqualTo("hash-1");
         assertThat(event.output()).isEqualTo(output);
+    }
+
+    @Test
+    void complete_passesBindingNameFromContext() {
+        EventBus eventBus = mock(EventBus.class);
+        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher();
+        publisher.eventBus = eventBus;
+
+        CaseInstance instance = new CaseInstance();
+        instance.setUuid(UUID.randomUUID());
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", "binding-x");
+
+        publisher.complete(ctx, Map.of());
+
+        ArgumentCaptor<WorkflowExecutionCompleted> captor =
+            ArgumentCaptor.forClass(WorkflowExecutionCompleted.class);
+        verify(eventBus).publish(eq(EventBusAddresses.WORKER_EXECUTION_FINISHED), captor.capture());
+        assertThat(captor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void complete_nullBindingName_passesNull() {
+        EventBus eventBus = mock(EventBus.class);
+        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher();
+        publisher.eventBus = eventBus;
+
+        CaseInstance instance = new CaseInstance();
+        instance.setUuid(UUID.randomUUID());
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
+
+        publisher.complete(ctx, Map.of());
+
+        ArgumentCaptor<WorkflowExecutionCompleted> captor =
+            ArgumentCaptor.forClass(WorkflowExecutionCompleted.class);
+        verify(eventBus).publish(eq(EventBusAddresses.WORKER_EXECUTION_FINISHED), captor.capture());
+        assertThat(captor.getValue().bindingName()).isNull();
     }
 }

@@ -61,17 +61,24 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         JobDefinition definition;
         try {
             definition = resolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
-            WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+            WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
             faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
                 ctx, capability, eventLogId, new PermanentFaultException(0, e.getMessage()));
             return Uni.createFrom().voidItem();
         }
 
-        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
         String inputDataJson;
         try {
@@ -106,7 +113,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                 Job job = K8sJobBuilder.build(definition, pending.dispatchId(),
                     instance.getUuid().toString(), instance.tenancyId,
                     capability.name(), ctx.idempotency(), inputDataJson,
-                    worker.name(), eventLogId);
+                    worker.name(), eventLogId, ctx.bindingName());
                 kubernetesClient.resource(job).create();
             } catch (KubernetesClientException e) {
                 registry.complete(pending.dispatchId());
@@ -135,10 +142,11 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
 
     private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
                                               Capability capability,
-                                              Map<String, Object> inputData) {
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
         String idempotency = WorkerExecutionKeys.inputDataHash(
             instance.getUuid(), worker.name(), capability.name(), inputData);
-        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 
     @Override
@@ -150,6 +158,8 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             ? scheduledEventLog.getMetadata().get("capabilityName").asText() : null;
         String workerName = scheduledEventLog.getMetadata().has("workerName")
             ? scheduledEventLog.getMetadata().get("workerName").asText() : null;
+        String bindingName = scheduledEventLog.getMetadata().has("bindingName")
+            ? scheduledEventLog.getMetadata().get("bindingName").asText() : null;
 
         if (capabilityName == null || workerName == null) {
             LOG.warnf("schedulePersistedEvent: missing metadata — capabilityName=%s workerName=%s",
@@ -214,7 +224,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                   }
                   LOG.infof("schedulePersistedEvent: re-dispatching case %s capability %s",
                       caseId, capabilityName);
-                  return submit(eventLogId, instance, worker, capability, inputData);
+                  return submit(eventLogId, instance, worker, capability, inputData, bindingName);
           });
     }
 }

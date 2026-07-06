@@ -46,6 +46,13 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         String entryUri;
         try {
             entryUri = camelCapabilityResolver.resolve(capability.name(), instance.tenancyId);
@@ -53,17 +60,12 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
             LOG.errorf("Camel route for capability %s missing at dispatch time", capability.name());
             faultPublisher.fault(
                 CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
-                new WorkerCorrelationContext(instance, worker,
-                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.name(),
-                        capability.name(), inputData), instance.tenancyId),
+                buildCtx(instance, worker, capability, inputData, bindingName),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
-        String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.name(), capability.name(), inputData);
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(
-            instance, worker, idempotency, instance.tenancyId);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
         ExchangePattern pattern = camelCapabilityResolver.exchangePattern(capability.name());
 
         return pattern == ExchangePattern.InOut
@@ -127,6 +129,15 @@ public class CamelWorkerExecutionManager implements WorkerExecutionManager {
             })
             .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
             .replaceWithVoid();
+    }
+
+    private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
+                                              Capability capability,
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
+        String idempotency = WorkerExecutionKeys.inputDataHash(
+            instance.getUuid(), worker.name(), capability.name(), inputData);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 
     @Override

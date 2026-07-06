@@ -21,7 +21,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsMetadata() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L, null);
 
         assertThat(job.getMetadata().getNamespace()).isEqualTo("batch");
         assertThat(job.getMetadata().getName()).startsWith("casehub-report-gen-");
@@ -31,7 +31,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsLabels() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L, null);
 
         Map<String, String> labels = job.getMetadata().getLabels();
         assertThat(labels).containsEntry("app.kubernetes.io/managed-by", "casehub");
@@ -44,7 +44,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsJobSpec() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L, null);
 
         assertThat(job.getSpec().getBackoffLimit()).isEqualTo(0);
         assertThat(job.getSpec().getActiveDeadlineSeconds()).isEqualTo(3600L);
@@ -54,7 +54,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsContainerSpec() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L, null);
 
         var container = job.getSpec().getTemplate().getSpec().getContainers().get(0);
         assertThat(container.getImage()).isEqualTo("acme/report-gen:latest");
@@ -67,7 +67,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsResourceLimits() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{}", "worker-1", 1L, null);
 
         var resources = job.getSpec().getTemplate().getSpec().getContainers().get(0).getResources();
         assertThat(resources.getRequests().get("cpu").toString()).isEqualTo("500m");
@@ -79,7 +79,7 @@ class K8sJobBuilderTest {
     @Test
     void build_imageBased_setsCasehubEnvVars() {
         Job job = K8sJobBuilder.build(imageDef("report-gen"), "dispatch-123",
-            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{\"key\":\"val\"}", "worker-1", 1L);
+            "case-456", "tenant-1", "k8s:report-gen", "idem-789", "{\"key\":\"val\"}", "worker-1", 1L, null);
 
         var envVars = job.getSpec().getTemplate().getSpec().getContainers().get(0).getEnv();
         assertThat(envVars).extracting(EnvVar::getName)
@@ -97,7 +97,7 @@ class K8sJobBuilderTest {
             List.of(), List.of(), null, null, null, null, null,
             3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
 
-        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:My Report Gen!", "i1", "{}", "worker-1", 1L);
+        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:My Report Gen!", "i1", "{}", "worker-1", 1L, null);
 
         String name = job.getMetadata().getName();
         assertThat(name).startsWith("casehub-my-report-gen-");
@@ -111,7 +111,7 @@ class K8sJobBuilderTest {
             List.of(), List.of(), null, null, null, null, null,
             3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
 
-        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:" + longName, "i1", "{}", "worker-1", 1L);
+        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:" + longName, "i1", "{}", "worker-1", 1L, null);
 
         assertThat(job.getMetadata().getName().length()).isLessThanOrEqualTo(57);
     }
@@ -122,7 +122,7 @@ class K8sJobBuilderTest {
             List.of(), List.of(), null, null, null, null, null,
             3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
 
-        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:simple", "i1", "{}", "worker-1", 1L);
+        Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:simple", "i1", "{}", "worker-1", 1L, null);
 
         var container = job.getSpec().getTemplate().getSpec().getContainers().get(0);
         assertThat(container.getResources().getRequests()).isNullOrEmpty();
@@ -133,7 +133,7 @@ class K8sJobBuilderTest {
     void build_includesRecoveryLabels() {
         JobDefinition def = imageDef("report-gen");
         Job job = K8sJobBuilder.build(def, "dispatch-1", "case-uuid-1", "t1",
-            "k8s:report-gen", "hash-abc", "{}", "w1", 42L);
+            "k8s:report-gen", "hash-abc", "{}", "w1", 42L, null);
 
         Map<String, String> labels = job.getMetadata().getLabels();
         assertThat(labels).containsEntry(K8sWorkerConstants.CASE_ID_LABEL, "case-uuid-1");
@@ -153,13 +153,42 @@ class K8sJobBuilderTest {
     void build_templatePath_includesRecoveryLabels() {
         JobDefinition def = templateDef("templated");
         Job job = K8sJobBuilder.build(def, "dispatch-2", "case-uuid-2", "t1",
-            "k8s:templated", "hash-def", "{}", "w2", 99L);
+            "k8s:templated", "hash-def", "{}", "w2", 99L, null);
 
         Map<String, String> labels = job.getMetadata().getLabels();
         assertThat(labels).containsEntry(K8sWorkerConstants.CASE_ID_LABEL, "case-uuid-2");
         assertThat(labels).containsEntry(K8sWorkerConstants.WORKER_NAME_LABEL, "w2");
         assertThat(labels).containsEntry(K8sWorkerConstants.EVENT_LOG_ID_LABEL, "99");
         assertThat(labels).containsEntry(K8sWorkerConstants.IDEMPOTENCY_LABEL, "hash-def");
+    }
+
+    // --- bindingName annotation tests ---
+
+    @Test
+    void build_withBindingName_addsAnnotation() {
+        JobDefinition def = imageDef("report-gen");
+        Job job = K8sJobBuilder.build(def, "dispatch-1", "case-1", "t1",
+            "k8s:test", "hash", "{}", "w1", 1L, "my-binding");
+        assertThat(job.getMetadata().getAnnotations())
+            .containsEntry("casehub.io/binding-name", "my-binding");
+    }
+
+    @Test
+    void build_nullBindingName_noAnnotation() {
+        JobDefinition def = imageDef("report-gen");
+        Job job = K8sJobBuilder.build(def, "dispatch-1", "case-1", "t1",
+            "k8s:test", "hash", "{}", "w1", 1L, null);
+        assertThat(job.getMetadata().getAnnotations())
+            .doesNotContainKey("casehub.io/binding-name");
+    }
+
+    @Test
+    void build_templateBased_withBindingName_addsAnnotation() {
+        JobDefinition def = templateDef("templated");
+        Job job = K8sJobBuilder.build(def, "dispatch-1", "case-1", "t1",
+            "k8s:templated", "hash", "{}", "w1", 1L, "template-binding");
+        assertThat(job.getMetadata().getAnnotations())
+            .containsEntry("casehub.io/binding-name", "template-binding");
     }
 
     private static String findEnv(List<EnvVar> envVars, String name) {

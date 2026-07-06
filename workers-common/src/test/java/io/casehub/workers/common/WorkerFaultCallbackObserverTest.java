@@ -23,7 +23,7 @@ class WorkerFaultCallbackObserverTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         PendingCompletion pending = new PendingCompletion(
             "dispatch-1", "camel", "casehub.workers.camel.fault",
             ctx, "token", Capability.of("cap", "", ""), 42L,

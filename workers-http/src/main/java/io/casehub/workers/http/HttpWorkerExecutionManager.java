@@ -67,6 +67,13 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
     @Override
     public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
                             Capability capability, Map<String, Object> inputData) {
+        return submit(eventLogId, instance, worker, capability, inputData, null);
+    }
+
+    @Override
+    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
+                            Capability capability, Map<String, Object> inputData,
+                            String bindingName) {
         ResolvedEndpoint endpoint;
         try {
             endpoint = httpEndpointResolver.resolve(capability.name(), instance.tenancyId);
@@ -74,17 +81,12 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
             LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.name());
             faultPublisher.fault(
                 HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
-                new WorkerCorrelationContext(instance, worker,
-                    WorkerExecutionKeys.inputDataHash(instance.getUuid(), worker.name(),
-                        capability.name(), inputData), instance.tenancyId),
+                buildCtx(instance, worker, capability, inputData, bindingName),
                 capability, eventLogId, e);
             return Uni.createFrom().voidItem();
         }
 
-        String idempotency = WorkerExecutionKeys.inputDataHash(
-            instance.getUuid(), worker.name(), capability.name(), inputData);
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(
-            instance, worker, idempotency, instance.tenancyId);
+        WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
         String resolvedUrl;
         try {
@@ -226,6 +228,15 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         }
         matcher.appendTail(sb);
         return sb.toString();
+    }
+
+    private WorkerCorrelationContext buildCtx(CaseInstance instance, Worker worker,
+                                              Capability capability,
+                                              Map<String, Object> inputData,
+                                              String bindingName) {
+        String idempotency = WorkerExecutionKeys.inputDataHash(
+            instance.getUuid(), worker.name(), capability.name(), inputData);
+        return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId, bindingName);
     }
 
     @Override

@@ -27,7 +27,7 @@ class WorkerFaultPublisherTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Capability capability = Capability.of("run-script", "", "");
 
         publisher.fault("casehub.workers.test.fault", ctx, capability, 99L,
@@ -53,7 +53,7 @@ class WorkerFaultPublisherTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Capability capability = Capability.of("send-webhook", "", "");
         PendingCompletion pending = new PendingCompletion(
             "dispatch-1", "http", "casehub.workers.http.fault",
@@ -73,5 +73,51 @@ class WorkerFaultPublisherTest {
         assertThat(event.inputDataHash()).isEqualTo("hash-1");
         assertThat(event.eventLogId()).isEqualTo("42");
         assertThat(event.cause()).isSameAs(cause);
+    }
+
+    @Test
+    void fault_address_passesBindingNameFromContext() {
+        EventBus eventBus = mock(EventBus.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
+        publisher.eventBus = eventBus;
+
+        CaseInstance instance = new CaseInstance();
+        instance.setUuid(UUID.randomUUID());
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(
+            instance, worker, "hash-1", "t1", "binding-x");
+        Capability capability = Capability.of("test-cap", "", "");
+        Throwable cause = new RuntimeException("test");
+
+        publisher.fault("test.fault", ctx, capability, 42L, cause);
+
+        ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
+        verify(eventBus).publish(eq("test.fault"), captor.capture());
+        assertThat(captor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void fault_pending_passesBindingNameFromContext() {
+        EventBus eventBus = mock(EventBus.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
+        publisher.eventBus = eventBus;
+
+        CaseInstance instance = new CaseInstance();
+        instance.setUuid(UUID.randomUUID());
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(
+            instance, worker, "hash-1", "t1", "binding-y");
+        Capability capability = Capability.of("test-cap", "", "");
+        PendingCompletion pending = new PendingCompletion(
+            "dispatch-1", "http", "casehub.workers.http.fault",
+            ctx, "token", capability, 42L,
+            Instant.now(), Instant.now().plusSeconds(3600), Map.of());
+        Throwable cause = new RuntimeException("test");
+
+        publisher.fault(pending, cause);
+
+        ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
+        verify(eventBus).publish(eq("casehub.workers.http.fault"), captor.capture());
+        assertThat(captor.getValue().bindingName()).isEqualTo("binding-y");
     }
 }

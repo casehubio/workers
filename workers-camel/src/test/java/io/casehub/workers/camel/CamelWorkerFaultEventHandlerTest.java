@@ -30,7 +30,7 @@ class CamelWorkerFaultEventHandlerTest {
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, capability, "hash-1", "1",
-            new RuntimeException("test"));
+            new RuntimeException("test"), null);
 
         when(faultHandler.handleFault(event)).thenReturn(Uni.createFrom().voidItem());
 

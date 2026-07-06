@@ -88,7 +88,7 @@ class WorkerCallbackResourceTest {
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
-        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1");
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1", null);
         return registry.register("camel", "test.fault", ctx, Capability.of("cap", "", ""), 1L, Duration.ofMinutes(60), Map.of());
     }
 }

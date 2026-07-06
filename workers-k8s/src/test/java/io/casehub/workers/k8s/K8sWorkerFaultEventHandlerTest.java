@@ -31,7 +31,7 @@ class K8sWorkerFaultEventHandlerTest {
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, capability, "hash-1", "1",
-            new RuntimeException("job failed"));
+            new RuntimeException("job failed"), null);
 
         when(faultHandler.handleFault(event)).thenReturn(Uni.createFrom().voidItem());
 

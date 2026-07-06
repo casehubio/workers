@@ -499,7 +499,7 @@ class HttpWorkerExecutionManagerTest {
         PendingCompletion pending = new PendingCompletion(
             "dispatch-123", HttpWorkerConstants.WORKER_TYPE,
             HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
-            new WorkerCorrelationContext(instance, worker, "idem", instance.tenancyId),
+            new WorkerCorrelationContext(instance, worker, "idem", instance.tenancyId, null),
             "token", cap, 1L, Instant.now(),
             Instant.now().plusSeconds(60), Map.of());
         when(asyncWorkerCompletionRegistry.register(eq(HttpWorkerConstants.WORKER_TYPE), eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT), any(WorkerCorrelationContext.class), any(Capability.class), any(), any(), any()))
@@ -540,11 +540,51 @@ class HttpWorkerExecutionManagerTest {
         verify(completionPublisher, never()).complete(any(), any());
     }
 
+    // --- bindingName propagation tests ---
+
+    @Test
+    void submit_6arg_passesBindingNameThroughCompletion() {
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
+        HttpResponse<Buffer> response = mockResponse(200, "OK", "{\"result\":\"ok\"}");
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w", "cap");
+        Capability cap = WorkerTestSupport.testCapability("cap");
+
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"), "binding-x")
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
+    }
+
+    @Test
+    void submit_5arg_passesNullBindingName() {
+        when(httpEndpointResolver.resolve(eq("cap"), anyString())).thenReturn(SYNC_ENDPOINT);
+        HttpResponse<Buffer> response = mockResponse(200, "OK", "{\"result\":\"ok\"}");
+        when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
+
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Worker worker = WorkerTestSupport.testWorker("w", "cap");
+        Capability cap = WorkerTestSupport.testCapability("cap");
+
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"))
+            .await().indefinitely();
+
+        ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
+            ArgumentCaptor.forClass(WorkerCorrelationContext.class);
+        verify(completionPublisher).complete(ctxCaptor.capture(), any());
+        assertThat(ctxCaptor.getValue().bindingName()).isNull();
+    }
+
     // --- Helpers ---
 
     private PendingCompletion stubPendingCompletion(CaseInstance instance, Worker worker, Capability cap) {
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(
-            instance, worker, "test-idempotency", instance.tenancyId);
+            instance, worker, "test-idempotency", instance.tenancyId, null);
         return new PendingCompletion(
             "dispatch-123", HttpWorkerConstants.WORKER_TYPE,
             HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
