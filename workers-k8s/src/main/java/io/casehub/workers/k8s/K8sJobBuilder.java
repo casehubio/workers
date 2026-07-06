@@ -24,21 +24,23 @@ public final class K8sJobBuilder {
 
     public static Job build(JobDefinition definition, String dispatchId,
                             String caseId, String tenancyId, String capabilityTag,
-                            String idempotency, String inputDataJson) {
+                            String idempotency, String inputDataJson,
+                            String workerName, Long eventLogId) {
         if (definition.template() != null && !definition.template().isBlank()) {
             return buildFromTemplate(definition, dispatchId, caseId, tenancyId,
-                capabilityTag, idempotency, inputDataJson);
+                capabilityTag, idempotency, inputDataJson, workerName, eventLogId);
         }
         return buildFromImage(definition, dispatchId, caseId, tenancyId,
-            capabilityTag, idempotency, inputDataJson);
+            capabilityTag, idempotency, inputDataJson, workerName, eventLogId);
     }
 
     private static Job buildFromImage(JobDefinition def, String dispatchId,
                                        String caseId, String tenancyId,
                                        String capabilityTag, String idempotency,
-                                       String inputDataJson) {
+                                       String inputDataJson, String workerName, Long eventLogId) {
         String jobName = generateJobName(def.name());
-        Map<String, String> labels = buildLabels(def, dispatchId, capabilityTag, tenancyId);
+        Map<String, String> labels = buildLabels(def, dispatchId, capabilityTag, tenancyId,
+            caseId, workerName, eventLogId, idempotency);
         List<EnvVar> envVars = buildEnvVars(def, caseId, tenancyId, capabilityTag,
             idempotency, inputDataJson);
 
@@ -93,7 +95,7 @@ public final class K8sJobBuilder {
     private static Job buildFromTemplate(JobDefinition def, String dispatchId,
                                           String caseId, String tenancyId,
                                           String capabilityTag, String idempotency,
-                                          String inputDataJson) {
+                                          String inputDataJson, String workerName, Long eventLogId) {
         InputStream is = Thread.currentThread().getContextClassLoader()
             .getResourceAsStream(def.template());
         if (is == null) {
@@ -105,7 +107,8 @@ public final class K8sJobBuilder {
         job.getMetadata().setName(jobName);
         job.getMetadata().setNamespace(def.namespace());
 
-        Map<String, String> labels = buildLabels(def, dispatchId, capabilityTag, tenancyId);
+        Map<String, String> labels = buildLabels(def, dispatchId, capabilityTag, tenancyId,
+            caseId, workerName, eventLogId, idempotency);
         Map<String, String> existing = job.getMetadata().getLabels();
         if (existing != null) {
             Map<String, String> merged = new LinkedHashMap<>(existing);
@@ -158,13 +161,19 @@ public final class K8sJobBuilder {
     }
 
     private static Map<String, String> buildLabels(JobDefinition def, String dispatchId,
-                                                    String capabilityTag, String tenancyId) {
+                                                    String capabilityTag, String tenancyId,
+                                                    String caseId, String workerName,
+                                                    Long eventLogId, String idempotency) {
         Map<String, String> labels = new LinkedHashMap<>();
         if (def.labels() != null) labels.putAll(def.labels());
         labels.put(K8sWorkerConstants.MANAGED_BY_LABEL, K8sWorkerConstants.MANAGED_BY_VALUE);
         labels.put(K8sWorkerConstants.DISPATCH_ID_LABEL, dispatchId);
         labels.put(K8sWorkerConstants.CAPABILITY_LABEL, capabilityTag);
         labels.put(K8sWorkerConstants.TENANCY_ID_LABEL, tenancyId);
+        labels.put(K8sWorkerConstants.CASE_ID_LABEL, caseId);
+        labels.put(K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
+        labels.put(K8sWorkerConstants.EVENT_LOG_ID_LABEL, String.valueOf(eventLogId));
+        labels.put(K8sWorkerConstants.IDEMPOTENCY_LABEL, idempotency);
         return labels;
     }
 

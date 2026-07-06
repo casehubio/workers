@@ -1,10 +1,15 @@
 package io.casehub.workers.k8s;
 
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.PermanentFaultException;
+import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
+import io.casehub.engine.common.internal.model.CaseInstance;
+import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodList;
@@ -19,11 +24,13 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
@@ -35,9 +42,12 @@ public class K8sJobInformerManager {
     @Inject AsyncWorkerCompletionRegistry registry;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject WorkerFaultPublisher faultPublisher;
+    @Inject CaseInstanceRepository caseInstanceRepository;
+    @Inject JobDefinitionResolver resolver;
 
     private final Map<String, SharedIndexInformer<Job>> informers = new ConcurrentHashMap<>();
     private final Set<String> failedNamespaces = ConcurrentHashMap.newKeySet();
+    private final Set<String> recoveredDispatchIds = ConcurrentHashMap.newKeySet();
 
     void start(Set<String> namespaces) {
         for (String ns : namespaces) {
@@ -121,6 +131,11 @@ public class K8sJobInformerManager {
 
     void processTerminal(Job job, String dispatchId) {
         Optional<PendingCompletion> maybePending = registry.complete(dispatchId);
+
+        if (maybePending.isEmpty()) {
+            maybePending = recoverFromJob(job, dispatchId);
+        }
+
         if (maybePending.isEmpty()) return;
 
         PendingCompletion pending = maybePending.get();
@@ -145,6 +160,73 @@ public class K8sJobInformerManager {
                 LOG.warnf("Failed to delete Job %s/%s: %s", ns, jobName, e.getMessage());
             }
         }
+    }
+
+    Optional<PendingCompletion> recoverFromJob(Job job, String dispatchId) {
+        if (!recoveredDispatchIds.add(dispatchId)) {
+            return Optional.empty();
+        }
+
+        Map<String, String> labels = job.getMetadata().getLabels();
+        String caseIdStr = labels.get(K8sWorkerConstants.CASE_ID_LABEL);
+        String workerName = labels.get(K8sWorkerConstants.WORKER_NAME_LABEL);
+        String capabilityTag = labels.get(K8sWorkerConstants.CAPABILITY_LABEL);
+        String tenancyId = labels.get(K8sWorkerConstants.TENANCY_ID_LABEL);
+        String eventLogIdStr = labels.get(K8sWorkerConstants.EVENT_LOG_ID_LABEL);
+        String idempotency = labels.get(K8sWorkerConstants.IDEMPOTENCY_LABEL);
+
+        if (caseIdStr == null || workerName == null || idempotency == null) {
+            LOG.warnf("Job %s/%s missing recovery labels — cannot recover (pre-upgrade Job?)",
+                job.getMetadata().getNamespace(), job.getMetadata().getName());
+            recoveredDispatchIds.remove(dispatchId);
+            return Optional.empty();
+        }
+
+        CaseInstance caseInstance;
+        try {
+            caseInstance = caseInstanceRepository.findByUuid(
+                UUID.fromString(caseIdStr), tenancyId);
+        } catch (Exception e) {
+            LOG.warnf("Recovery: failed to load CaseInstance %s: %s", caseIdStr, e.getMessage());
+            recoveredDispatchIds.remove(dispatchId);
+            return Optional.empty();
+        }
+
+        if (caseInstance == null) {
+            LOG.warnf("Recovery: CaseInstance %s not found — case may have been closed", caseIdStr);
+            recoveredDispatchIds.remove(dispatchId);
+            return Optional.empty();
+        }
+
+        Worker worker = Worker.builder()
+            .name(workerName)
+            .capabilityName(capabilityTag)
+            .noFunction()
+            .build();
+        WorkerCorrelationContext ctx = new WorkerCorrelationContext(
+            caseInstance, worker, idempotency, tenancyId);
+
+        Map<String, String> provisionerMeta;
+        try {
+            JobDefinition def = resolver.resolve(capabilityTag, tenancyId);
+            provisionerMeta = Map.of(
+                "cleanup", def.cleanup().name(),
+                "maxOutputBytes", String.valueOf(def.maxOutputBytes()));
+        } catch (Exception e) {
+            provisionerMeta = Map.of("cleanup", "DELETE", "maxOutputBytes", "1048576");
+        }
+
+        Long eventLogId = eventLogIdStr != null ? Long.parseLong(eventLogIdStr) : null;
+        Capability capability = Capability.of(capabilityTag, "", "");
+
+        LOG.infof("Recovery: reconstructed PendingCompletion for dispatch %s (case %s, worker %s)",
+            dispatchId, caseIdStr, workerName);
+
+        return Optional.of(new PendingCompletion(
+            dispatchId, K8sWorkerConstants.WORKER_TYPE,
+            K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
+            ctx, "", capability, eventLogId,
+            Instant.now(), Instant.MAX, provisionerMeta));
     }
 
     Throwable classifyJobFailure(Job job, String namespace, String jobName) {

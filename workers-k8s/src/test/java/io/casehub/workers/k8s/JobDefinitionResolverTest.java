@@ -2,11 +2,14 @@ package io.casehub.workers.k8s;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 import io.casehub.workers.common.WorkerProvisioningException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.eclipse.microprofile.config.Config;
 import org.junit.jupiter.api.Test;
 
 class JobDefinitionResolverTest {
@@ -113,5 +116,40 @@ class JobDefinitionResolverTest {
         assertThat(resolver.canResolve("k8s:x", "t1")).isTrue();
         assertThat(resolver.canResolve("k8s:y", "t1")).isFalse();
         assertThat(resolver.canResolve("script:x", "t1")).isFalse();
+    }
+
+    @Test
+    void init_loadsCapabilitiesFromConfig() {
+        // Setup: Create resolver with mocked Config
+        JobDefinitionResolver resolver = new JobDefinitionResolver();
+
+        // Mock Config to return job definition properties
+        Config mockConfig = mock(Config.class);
+        when(mockConfig.getPropertyNames())
+            .thenReturn(List.of(
+                "casehub.workers.k8s.jobs.report-gen.image",
+                "casehub.workers.k8s.jobs.ml-inference.template"
+            ));
+
+        when(mockConfig.getOptionalValue("casehub.workers.k8s.jobs.report-gen.image", String.class))
+            .thenReturn(Optional.of("acme/report:latest"));
+        when(mockConfig.getOptionalValue("casehub.workers.k8s.jobs.ml-inference.template", String.class))
+            .thenReturn(Optional.of("jobs/ml.yaml"));
+
+        // Set fields to simulate CDI injection
+        resolver.config = mockConfig;
+        resolver.defaultNamespace = "default";
+        resolver.defaultTimeoutSeconds = 3600;
+        resolver.defaultTtlAfterFinished = 600;
+        resolver.defaultBackoffLimit = 0;
+        resolver.defaultCleanup = "delete";
+        resolver.defaultMaxOutputBytes = 1048576;
+        resolver.defaultMaxInputBytes = 262144;
+
+        // Call init() — this method doesn't exist yet, so test will fail
+        resolver.init();
+
+        // Verify capabilities populated from Config
+        assertThat(resolver.capabilities()).containsExactlyInAnyOrder("k8s:report-gen", "k8s:ml-inference");
     }
 }

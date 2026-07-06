@@ -143,17 +143,17 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 
 | Type | Purpose |
 |------|---------|
-| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator |
+| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata |
 | `K8sWorkerEventBusAddresses.K8S_WORKER_FAULT` | Separate fault address from other workers |
 | `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
 | `CleanupPolicy` | `DELETE` (default) / `RETAIN` enum — eager delete + TTL safety net vs. manual cleanup |
-| `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier |
+| `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier. `@PostConstruct` eager initialization from Config — eliminates race between engine recovery and worker initialization |
 | `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars |
 | `K8sJobOutputCapture` | Reads Pod logs after completion — lists Pods by `job-name` label, selects last Pod (handles `backoffLimit > 0`), bounded read at `maxOutputBytes`, JSON parsing (valid object → structured map; else → raw wrapper `{stdout, exitCode}`) |
-| `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — creates Job via `kubernetesClient.resource(job).create()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())` |
+| `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — creates Job via `kubernetesClient.resource(job).create()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())`. Implements `schedulePersistedEvent()` for restart recovery, injects `CaseInstanceRepository` |
 | `K8sReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver |
 | `K8sWorkerRuntime` | `WorkerRuntime` implementation — validates K8s connectivity (`kubernetesClient.getApiVersion()`), starts per-namespace informers, FAULTED if no jobs configured or all informers failed |
-| `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
+| `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard via `ConcurrentHashMap.newKeySet()`). Injects `CaseInstanceRepository`. Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
 | `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 
 ## Key Rules
@@ -203,6 +203,10 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
+- K8s recovery on restart: `processTerminal()` reconstructs `PendingCompletion` from Job labels when registry is empty. `recoveredDispatchIds` provides at-most-once guard via atomic `add()`. `CaseInstanceRepository.findByUuid()` loads the CaseInstance; `Worker` is reconstructed from labels with `WorkerFunction.NONE`.
+- K8s `schedulePersistedEvent()`: checks K8s for existing Job (label selector with case-id, capability, worker-name). If found → voidItem (informer handles). If not found → re-dispatches via `submit()`.
+- K8s Job labels carry recovery metadata: `casehub.io/case-id`, `casehub.io/worker-name`, `casehub.io/event-log-id`, `casehub.io/idempotency`. Pre-upgrade Jobs lacking these labels cannot be recovered — they expire via `ttlSecondsAfterFinished`.
+- `JobDefinitionResolver` initializes eagerly via `@PostConstruct` — `capabilities()` returns correct results before any startup observer fires. Eliminates race between engine recovery (`@Priority(22)`) and worker initialization (`@Priority(APPLICATION + 10)`).
 
 ## Co-deployment
 

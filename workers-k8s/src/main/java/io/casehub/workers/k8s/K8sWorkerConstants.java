@@ -8,6 +8,10 @@ public final class K8sWorkerConstants {
     public static final String DISPATCH_ID_LABEL = "casehub.io/dispatch-id";
     public static final String CAPABILITY_LABEL = "casehub.io/capability";
     public static final String TENANCY_ID_LABEL = "casehub.io/tenancy-id";
+    public static final String CASE_ID_LABEL = "casehub.io/case-id";
+    public static final String WORKER_NAME_LABEL = "casehub.io/worker-name";
+    public static final String EVENT_LOG_ID_LABEL = "casehub.io/event-log-id";
+    public static final String IDEMPOTENCY_LABEL = "casehub.io/idempotency";
 
     private K8sWorkerConstants() {}
 }

@@ -14,6 +14,7 @@ import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.casehub.engine.common.internal.model.CaseInstance;
+import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.api.model.batch.v1.JobCondition;
@@ -29,7 +30,9 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation;
 import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable;
+import io.smallrye.mutiny.Uni;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,6 +43,8 @@ import org.mockito.ArgumentCaptor;
 
 class K8sJobInformerManagerTest {
 
+    private static final UUID CASE_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
     K8sJobInformerManager manager;
     AsyncWorkerCompletionRegistry registry;
     WorkflowCompletionPublisher completionPublisher;
@@ -48,6 +53,9 @@ class K8sJobInformerManagerTest {
     MixedOperation podOp;
     NonNamespaceOperation nsOp;
     FilterWatchListDeletable labelOp;
+    CaseInstance testCaseInstance;
+    CaseInstanceRepository caseInstanceRepository;
+    JobDefinitionResolver resolver;
 
     @BeforeEach
     void setUp() {
@@ -64,10 +72,19 @@ class K8sJobInformerManagerTest {
         when(podOp.inNamespace(anyString())).thenReturn(nsOp);
         when(nsOp.withLabel(anyString(), anyString())).thenReturn(labelOp);
 
+        caseInstanceRepository = mock(CaseInstanceRepository.class);
+        resolver = new JobDefinitionResolver();
+        resolver.initialize(Map.of("test", imageDef("test")));
+        testCaseInstance = new CaseInstance();
+        testCaseInstance.setUuid(CASE_ID);
+        testCaseInstance.tenancyId = "t1";
+
         manager.registry = registry;
         manager.completionPublisher = completionPublisher;
         manager.faultPublisher = faultPublisher;
         manager.kubernetesClient = client;
+        manager.caseInstanceRepository = caseInstanceRepository;
+        manager.resolver = resolver;
     }
 
     @Test
@@ -407,5 +424,97 @@ class K8sJobInformerManagerTest {
         io.fabric8.kubernetes.api.model.PodList list = new io.fabric8.kubernetes.api.model.PodList();
         list.setItems(List.of());
         return list;
+    }
+
+    private Job buildRecoverableJob(String namespace, String name, String dispatchId,
+            String conditionType, UUID caseId, String tenancyId,
+            String workerName, String capability, Long eventLogId, String idempotency) {
+        Job job = buildJob(namespace, name, dispatchId, conditionType);
+        Map<String, String> labels = new LinkedHashMap<>(job.getMetadata().getLabels());
+        labels.put(K8sWorkerConstants.CASE_ID_LABEL, caseId.toString());
+        labels.put(K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
+        labels.put(K8sWorkerConstants.CAPABILITY_LABEL, capability);
+        labels.put(K8sWorkerConstants.TENANCY_ID_LABEL, tenancyId);
+        labels.put(K8sWorkerConstants.EVENT_LOG_ID_LABEL, String.valueOf(eventLogId));
+        labels.put(K8sWorkerConstants.IDEMPOTENCY_LABEL, idempotency);
+        job.getMetadata().setLabels(labels);
+        return job;
+    }
+
+    private static JobDefinition imageDef(String name) {
+        return new JobDefinition(name, "batch", "acme/" + name + ":latest",
+            List.of(), List.of(), null, null, null, null, null,
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+    }
+
+    // --- Recovery tests ---
+
+    @Test
+    void processTerminal_registryEmpty_recoversFromJobLabels() {
+        Job job = buildRecoverableJob("batch", "casehub-test-abc", "dispatch-1",
+            "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
+        when(registry.complete("dispatch-1")).thenReturn(Optional.empty());
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(testCaseInstance);
+        when(labelOp.list()).thenReturn(emptyPodList());
+
+        manager.processTerminal(job, "dispatch-1");
+
+        verify(completionPublisher).complete(any(WorkerCorrelationContext.class), any());
+    }
+
+    @Test
+    void processTerminal_registryEmpty_missingCaseIdLabel_skips() {
+        Job job = buildJob("batch", "casehub-test-abc", "dispatch-2", "Complete");
+        when(registry.complete("dispatch-2")).thenReturn(Optional.empty());
+
+        manager.processTerminal(job, "dispatch-2");
+
+        verifyNoInteractions(completionPublisher, faultPublisher);
+    }
+
+    @Test
+    void processTerminal_registryEmpty_secondCallSameDispatch_skips() {
+        Job job = buildRecoverableJob("batch", "casehub-test-abc", "dispatch-3",
+            "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
+        when(registry.complete("dispatch-3")).thenReturn(Optional.empty());
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(testCaseInstance);
+        when(labelOp.list()).thenReturn(emptyPodList());
+
+        manager.processTerminal(job, "dispatch-3");
+        manager.processTerminal(job, "dispatch-3");
+
+        verify(completionPublisher, times(1)).complete(any(), any());
+    }
+
+    @Test
+    void processTerminal_registryEmpty_failedJob_publishesFault() {
+        Job job = buildRecoverableJob("batch", "casehub-test-fail", "dispatch-4",
+            "Failed", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
+        job.getStatus().getConditions().get(0).setReason("DeadlineExceeded");
+        when(registry.complete("dispatch-4")).thenReturn(Optional.empty());
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(testCaseInstance);
+        when(labelOp.list()).thenReturn(emptyPodList());
+
+        manager.processTerminal(job, "dispatch-4");
+
+        ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
+        verify(faultPublisher).fault(any(PendingCompletion.class), captor.capture());
+        assertThat(captor.getValue()).isInstanceOf(PermanentFaultException.class);
+    }
+
+    @Test
+    void processTerminal_registryEmpty_caseInstanceNotFound_skips() {
+        Job job = buildRecoverableJob("batch", "casehub-test-abc", "dispatch-5",
+            "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
+        when(registry.complete("dispatch-5")).thenReturn(Optional.empty());
+        when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
+            .thenReturn(null);
+
+        manager.processTerminal(job, "dispatch-5");
+
+        verifyNoInteractions(completionPublisher, faultPublisher);
     }
 }

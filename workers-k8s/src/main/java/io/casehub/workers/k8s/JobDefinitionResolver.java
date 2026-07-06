@@ -2,6 +2,7 @@ package io.casehub.workers.k8s;
 
 import io.casehub.workers.common.WorkerCapabilityResolver;
 import io.casehub.workers.common.WorkerProvisioningException;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
@@ -42,6 +43,11 @@ public class JobDefinitionResolver implements WorkerCapabilityResolver<JobDefini
     long defaultMaxInputBytes;
 
     private volatile Map<String, JobDefinition> definitions = Map.of();
+
+    @PostConstruct
+    void init() {
+        initialize();
+    }
 
     void initialize() {
         Map<String, Map<String, String>> configJobs = loadConfigJobs();

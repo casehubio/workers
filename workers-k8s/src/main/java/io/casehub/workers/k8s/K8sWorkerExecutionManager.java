@@ -3,8 +3,10 @@ package io.casehub.workers.k8s;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.casehub.worker.api.Capability;
 import io.casehub.worker.api.Worker;
+import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
+import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
@@ -26,6 +28,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 
 @WorkerBackend
 @Priority(10)
@@ -39,6 +42,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
     @Inject WorkerFaultPublisher faultPublisher;
     @Inject KubernetesClient kubernetesClient;
     @Inject K8sJobInformerManager informerManager;
+    @Inject CaseInstanceRepository caseInstanceRepository;
     @Inject ObjectMapper objectMapper;
 
     @ConfigProperty(name = "casehub.workers.k8s.max-input-bytes", defaultValue = "262144")
@@ -101,7 +105,8 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             try {
                 Job job = K8sJobBuilder.build(definition, pending.dispatchId(),
                     instance.getUuid().toString(), instance.tenancyId,
-                    capability.name(), ctx.idempotency(), inputDataJson);
+                    capability.name(), ctx.idempotency(), inputDataJson,
+                    worker.name(), eventLogId);
                 kubernetesClient.resource(job).create();
             } catch (KubernetesClientException e) {
                 registry.complete(pending.dispatchId());
@@ -134,5 +139,82 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
         String idempotency = WorkerExecutionKeys.inputDataHash(
             instance.getUuid(), worker.name(), capability.name(), inputData);
         return new WorkerCorrelationContext(instance, worker, idempotency, instance.tenancyId);
+    }
+
+    @Override
+    public Uni<Void> schedulePersistedEvent(EventLog scheduledEventLog) {
+        if (scheduledEventLog.getMetadata() == null) {
+            return Uni.createFrom().voidItem();
+        }
+        String capabilityName = scheduledEventLog.getMetadata().has("capabilityName")
+            ? scheduledEventLog.getMetadata().get("capabilityName").asText() : null;
+        String workerName = scheduledEventLog.getMetadata().has("workerName")
+            ? scheduledEventLog.getMetadata().get("workerName").asText() : null;
+
+        if (capabilityName == null || workerName == null) {
+            LOG.warnf("schedulePersistedEvent: missing metadata — capabilityName=%s workerName=%s",
+                capabilityName, workerName);
+            return Uni.createFrom().voidItem();
+        }
+
+        JobDefinition definition;
+        try {
+            definition = resolver.resolve(capabilityName, scheduledEventLog.tenancyId);
+        } catch (Exception e) {
+            LOG.warnf("schedulePersistedEvent: capability '%s' not resolvable — config removed?",
+                capabilityName);
+            return Uni.createFrom().voidItem();
+        }
+
+        UUID caseId = scheduledEventLog.getCaseId();
+        String tenancyId = scheduledEventLog.tenancyId;
+        Long eventLogId = scheduledEventLog.id;
+
+        return Uni.createFrom().item(() -> {
+            Map<String, String> labelSelector = Map.of(
+                K8sWorkerConstants.MANAGED_BY_LABEL, K8sWorkerConstants.MANAGED_BY_VALUE,
+                K8sWorkerConstants.CASE_ID_LABEL, caseId.toString(),
+                K8sWorkerConstants.CAPABILITY_LABEL, capabilityName,
+                K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
+
+            for (String ns : resolver.namespaces()) {
+                var existing = kubernetesClient.resources(Job.class)
+                    .inNamespace(ns).withLabels(labelSelector).list();
+                if (!existing.getItems().isEmpty()) {
+                    LOG.infof("schedulePersistedEvent: existing Job found for case %s capability %s — informer handles it",
+                        caseId, capabilityName);
+                    return false;
+                }
+            }
+            return true;
+        }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
+          .onItem().transformToUni(shouldRedispatch -> {
+              if (!shouldRedispatch) {
+                  return Uni.createFrom().voidItem();
+              }
+              CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId);
+                  if (instance == null) {
+                      LOG.warnf("schedulePersistedEvent: CaseInstance %s not found — case closed?", caseId);
+                      return Uni.createFrom().voidItem();
+                  }
+                  Worker worker = Worker.builder()
+                      .name(workerName)
+                      .capabilityName(capabilityName)
+                      .noFunction()
+                      .build();
+                  Capability capability = Capability.of(capabilityName, "", "");
+                  Map<String, Object> inputData;
+                  try {
+                      inputData = scheduledEventLog.getPayload() != null
+                          ? objectMapper.convertValue(scheduledEventLog.getPayload(),
+                              new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {})
+                          : Map.of();
+                  } catch (Exception e) {
+                      inputData = Map.of();
+                  }
+                  LOG.infof("schedulePersistedEvent: re-dispatching case %s capability %s",
+                      caseId, capabilityName);
+                  return submit(eventLogId, instance, worker, capability, inputData);
+          });
     }
 }
