@@ -25,7 +25,7 @@ class K8sWorkerFaultEventHandlerTest {
         Worker worker = Worker.builder()
             .name("w1")
             .capabilityName("k8s:test")
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())))
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of())))
             .build();
         Capability capability = WorkerTestSupport.testCapability("k8s:test");
 

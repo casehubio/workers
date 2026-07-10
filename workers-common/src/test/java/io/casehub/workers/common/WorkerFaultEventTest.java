@@ -17,7 +17,7 @@ class WorkerFaultEventTest {
     void bindingName_carriedThrough() {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability capability = Capability.of("test-cap", "", "");
         Throwable cause = new RuntimeException("test");
 
@@ -31,7 +31,7 @@ class WorkerFaultEventTest {
     void bindingName_nullable() {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability capability = Capability.of("test-cap", "", "");
         Throwable cause = new RuntimeException("test");
 

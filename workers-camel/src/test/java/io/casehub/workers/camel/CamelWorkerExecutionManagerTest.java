@@ -112,6 +112,6 @@ class CamelWorkerExecutionManagerTest {
     }
 
     private Worker testWorker() {
-        return Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        return Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
     }
 }

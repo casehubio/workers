@@ -28,7 +28,7 @@ public final class WorkerTestSupport {
 
     public static Worker testWorker(String name, String... capabilityNames) {
         return Worker.builder().name(name).capabilityNames(capabilityNames)
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())))
+            .function(ctx -> WorkerResult.of(Map.of()))
             .build();
     }
 

@@ -68,7 +68,7 @@ class WorkerRetrySupportTest {
         @Test
         void workerWithDefaultExecutionPolicy_returnsItsRetryPolicy() {
             // Worker's default ExecutionPolicy() has new RetryPolicy() — should return it
-            Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
             // default ExecutionPolicy sets retries = new RetryPolicy()
             RetryPolicy result = WorkerRetrySupport.resolveRetryPolicy(worker);
 
@@ -165,7 +165,7 @@ class WorkerRetrySupportTest {
         @Test
         void constructsCorrectEventLogAndCallsAppend() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
             support.persistFailureLog(instance, worker, "hash-abc", "Connection refused", "tenant-1")
                 .await().indefinitely();
 
@@ -186,7 +186,7 @@ class WorkerRetrySupportTest {
         @Test
         void nullErrorMessage_usesUnknown() {
             CaseInstance instance = testCaseInstance();
-            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            Worker worker = Worker.builder().name("send-email").capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
             support.persistFailureLog(instance, worker, "hash-abc", null, "tenant-1")
                 .await().indefinitely();
 
@@ -283,7 +283,7 @@ class WorkerRetrySupportTest {
         Worker.Builder builder = Worker.builder()
             .name("test-worker")
             .capabilityNames("cap")
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of())));
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of())));
         if (policy != null) {
             builder.executionPolicy(policy);
         }

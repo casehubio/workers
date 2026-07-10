@@ -25,7 +25,7 @@ class WorkflowCompletionPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Map<String, Object> output = Map.of("result", "ok");
 
@@ -50,7 +50,7 @@ class WorkflowCompletionPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", "binding-x");
 
         publisher.complete(ctx, Map.of());
@@ -69,7 +69,7 @@ class WorkflowCompletionPublisherTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
 
         publisher.complete(ctx, Map.of());

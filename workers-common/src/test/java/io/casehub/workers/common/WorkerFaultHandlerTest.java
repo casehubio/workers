@@ -87,7 +87,7 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 100, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("transient error");
 
@@ -125,7 +125,7 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("500 error");
 
@@ -149,7 +149,7 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RetryAfterException cause = new RetryAfterException(200, "429 Too Many Requests");
 
@@ -182,7 +182,7 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 100, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("transient");
 
@@ -246,7 +246,7 @@ class WorkerFaultHandlerTest {
     }
 
     private static Worker testWorker(String name) {
-        return Worker.builder().name(name).capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        return Worker.builder().name(name).capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
     }
 
     private static Capability testCapability(String tag) {

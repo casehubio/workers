@@ -22,7 +22,7 @@ class WorkerCompletionExpiryObserverTest {
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
-        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         PendingCompletion pending = new PendingCompletion(
             "dispatch-1", "http", "casehub.workers.http.fault",

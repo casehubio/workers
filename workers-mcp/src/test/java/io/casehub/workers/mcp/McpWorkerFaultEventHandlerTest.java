@@ -25,7 +25,7 @@ class McpWorkerFaultEventHandlerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync(ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
         Capability capability = Capability.of("mcp:slack:send-message", "", "");
 
         WorkerFaultEvent event = new WorkerFaultEvent(
