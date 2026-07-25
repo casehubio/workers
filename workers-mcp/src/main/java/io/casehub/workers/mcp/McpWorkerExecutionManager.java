@@ -4,19 +4,17 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.casehub.worker.api.Capability;
-import io.casehub.worker.api.Worker;
-import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
 import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerRetrySupport;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
-import io.smallrye.mutiny.Uni;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
@@ -25,10 +23,11 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.jboss.logging.Logger;
 
 @WorkerBackend
 @Priority(10)
@@ -62,80 +61,75 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData) {
-        return submit(eventLogId, instance, worker, capability, inputData, null);
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData) {
+        submit(eventLogId, instance, worker, capability, inputData, null);
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData,
-                            String bindingName) {
-        String capTag = capability.name();
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData,
+                       String bindingName) {
+        String capTag     = capability.name();
         String serverName = McpServerResolver.parseServerName(capTag);
-        String toolName = McpServerResolver.parseToolName(capTag);
+        String toolName   = McpServerResolver.parseToolName(capTag);
 
-        // Resolve server — failure is permanent
         ResolvedMcpServer server;
         try {
             server = serverResolver.resolve(capTag, instance.tenancyId);
         } catch (Exception e) {
             faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT,
-                buildCtx(instance, worker, capability, inputData, bindingName),
-                capability, eventLogId,
-                new PermanentFaultException(0, e.getMessage()));
-            return Uni.createFrom().voidItem();
+                                 buildCtx(instance, worker, capability, inputData, bindingName),
+                                 capability, eventLogId,
+                                 new PermanentFaultException(0, e.getMessage()));
+            return;
         }
 
         WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
-        return sessionManager.getOrInitialize(serverName)
-            .flatMap(session -> {
-                long requestId = session.nextRequestId();
+        try {
+            McpSession session   = sessionManager.getOrInitialize(serverName).await().indefinitely();
+            long       requestId = session.nextRequestId();
 
-                ObjectNode jsonRpcRequest = buildJsonRpcRequest(toolName, inputData, requestId);
+            ObjectNode jsonRpcRequest = buildJsonRpcRequest(toolName, inputData, requestId);
 
-                HttpRequest<Buffer> request = webClient.requestAbs(HttpMethod.POST, server.url());
-                request.putHeader("Content-Type", "application/json");
-                request.putHeader("Accept", "application/json, text/event-stream");
-                request.putHeader("MCP-Protocol-Version", session.protocolVersion());
+            HttpRequest<Buffer> request = webClient.requestAbs(HttpMethod.POST, server.url());
+            request.putHeader("Content-Type", "application/json");
+            request.putHeader("Accept", "application/json, text/event-stream");
+            request.putHeader("MCP-Protocol-Version", session.protocolVersion());
+            if (session.hasSessionId()) {
+                request.putHeader("Mcp-Session-Id", session.sessionId());
+            }
+            server.headers().forEach(request::putHeader);
+            request.timeout(server.timeoutSeconds() * 1000L);
+
+            var response = request.sendJson(jsonRpcRequest).await().indefinitely();
+            int status   = response.statusCode();
+
+            if (status >= 200 && status < 300) {
+                handleSuccessResponse(response, requestId, ctx);
+                return;
+            }
+            if (status == 404) {
                 if (session.hasSessionId()) {
-                    request.putHeader("Mcp-Session-Id", session.sessionId());
+                    sessionManager.invalidate(serverName);
+                    throw new RuntimeException("404 — MCP session expired, invalidated");
+                } else {
+                    throw new PermanentFaultException(404, "MCP endpoint not found");
                 }
-                server.headers().forEach(request::putHeader);
-                request.timeout(server.timeoutSeconds() * 1000L);
-
-                return request.sendJson(jsonRpcRequest)
-                    .flatMap(response -> {
-                        int status = response.statusCode();
-
-                        if (status >= 200 && status < 300) {
-                            return handleSuccessResponse(response, requestId, ctx);
-                        }
-                        if (status == 404) {
-                            if (session.hasSessionId()) {
-                                sessionManager.invalidate(serverName);
-                                throw new RuntimeException("404 — MCP session expired, invalidated");
-                            } else {
-                                throw new PermanentFaultException(404, "MCP endpoint not found");
-                            }
-                        }
-                        if (status == 429) {
-                            throw WorkerRetrySupport.parseRetryAfter(
-                                response.getHeader("Retry-After"), status, response.statusMessage());
-                        }
-                        if (status >= 400 && status < 500) {
-                            throw new PermanentFaultException(status,
-                                status + " " + response.statusMessage());
-                        }
-                        // 5xx
-                        throw new RuntimeException(status + " " + response.statusMessage());
-                    });
-            })
-            .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT, ctx, capability, eventLogId, t);
-                return Uni.createFrom().voidItem();
-            });
+            }
+            if (status == 429) {
+                throw WorkerRetrySupport.parseRetryAfter(
+                        response.getHeader("Retry-After"), status, response.statusMessage());
+            }
+            if (status >= 400 && status < 500) {
+                throw new PermanentFaultException(status,
+                                                  status + " " + response.statusMessage());
+            }
+            throw new RuntimeException(status + " " + response.statusMessage());
+        } catch (Exception t) {
+            faultPublisher.fault(McpWorkerEventBusAddresses.MCP_WORKER_FAULT, ctx, capability, eventLogId, t);
+        }
     }
 
     @Override
@@ -159,11 +153,11 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
         return root;
     }
 
-    private Uni<Void> handleSuccessResponse(io.vertx.mutiny.ext.web.client.HttpResponse<Buffer> response,
-                                             long requestId,
-                                             WorkerCorrelationContext ctx) {
+    private void handleSuccessResponse(io.vertx.mutiny.ext.web.client.HttpResponse<Buffer> response,
+                                       long requestId,
+                                       WorkerCorrelationContext ctx) {
         String contentType = response.getHeader("Content-Type");
-        String body = response.bodyAsString();
+        String body        = response.bodyAsString();
 
         JsonNode jsonRpc;
         try {
@@ -181,36 +175,31 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
             throw new RuntimeException("Malformed MCP response: " + e.getMessage());
         }
 
-        return handleJsonRpcResponse(jsonRpc, ctx);
+        handleJsonRpcResponse(jsonRpc, ctx);
     }
 
-    private Uni<Void> handleJsonRpcResponse(JsonNode jsonRpc, WorkerCorrelationContext ctx) {
-        // Check for JSON-RPC error
+    private void handleJsonRpcResponse(JsonNode jsonRpc, WorkerCorrelationContext ctx) {
         if (jsonRpc.has("error")) {
-            JsonNode error = jsonRpc.get("error");
-            int code = error.has("code") ? error.get("code").asInt() : 0;
-            String message = error.has("message") ? error.get("message").asText() : "Unknown error";
+            JsonNode error   = jsonRpc.get("error");
+            int      code    = error.has("code") ? error.get("code").asInt() : 0;
+            String   message = error.has("message") ? error.get("message").asText() : "Unknown error";
 
             if (PERMANENT_ERROR_CODES.contains(code)) {
                 throw new PermanentFaultException(0, "JSON-RPC error " + code + ": " + message);
             }
-            // -32603 (Internal error) and all others are retryable
             throw new RuntimeException("JSON-RPC error " + code + ": " + message);
         }
 
-        // Must have result
         JsonNode result = jsonRpc.get("result");
         if (result == null) {
             throw new RuntimeException("Malformed MCP response: missing 'result'");
         }
 
-        // Check isError flag — retryable
         if (result.has("isError") && result.get("isError").asBoolean()) {
             String text = extractContentText(result);
             throw new RuntimeException("MCP tool returned isError: " + text);
         }
 
-        // Build output
         Map<String, Object> output;
         if (result.has("structuredContent") && result.get("structuredContent").isObject()) {
             output = OBJECT_MAPPER.convertValue(result.get("structuredContent"), MAP_TYPE);
@@ -222,7 +211,6 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
         }
 
         completionPublisher.complete(ctx, output);
-        return Uni.createFrom().voidItem();
     }
 
     private String extractContentText(JsonNode result) {

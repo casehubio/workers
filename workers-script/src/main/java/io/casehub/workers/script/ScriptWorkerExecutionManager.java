@@ -1,27 +1,26 @@
 package io.casehub.workers.script;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.worker.api.Capability;
-import io.casehub.worker.api.Worker;
-import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
 import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
-import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import org.jboss.logging.Logger;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -35,7 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import org.jboss.logging.Logger;
 
 @WorkerBackend
 @Priority(10)
@@ -70,40 +68,35 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData) {
-        return submit(eventLogId, instance, worker, capability, inputData, null);
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData) {
+        submit(eventLogId, instance, worker, capability, inputData, null);
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData,
-                            String bindingName) {
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData,
+                       String bindingName) {
         ScriptDefinition definition;
         try {
             definition = scriptDefinitionResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
             faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
-                ctx, capability, eventLogId,
-                new PermanentFaultException(0, e.getMessage()));
-            return Uni.createFrom().voidItem();
+                                 ctx, capability, eventLogId,
+                                 new PermanentFaultException(0, e.getMessage()));
+            return;
         }
 
         WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
 
-        return Uni.createFrom()
-            .item(() -> executeProcess(definition, inputData, ctx, capability))
-            .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
-            .flatMap(output -> {
-                completionPublisher.complete(ctx, output);
-                return Uni.createFrom().<Void>voidItem();
-            })
-            .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
-                    ctx, capability, eventLogId, t);
-                return Uni.createFrom().voidItem();
-            });
+        try {
+            Map<String, Object> output = executeProcess(definition, inputData, ctx, capability);
+            completionPublisher.complete(ctx, output);
+        } catch (Exception t) {
+            faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
+                                 ctx, capability, eventLogId, t);
+        }
     }
 
     @Override

@@ -1,14 +1,14 @@
 package io.casehub.workers.k8s;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.worker.api.Capability;
-import io.casehub.worker.api.Worker;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
 import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.PermanentFaultException;
@@ -18,8 +18,6 @@ import io.casehub.workers.common.WorkerProvisioningException;
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -59,23 +57,23 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData) {
-        return submit(eventLogId, instance, worker, capability, inputData, null);
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData) {
+        submit(eventLogId, instance, worker, capability, inputData, null);
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData,
-                            String bindingName) {
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData,
+                       String bindingName) {
         JobDefinition definition;
         try {
             definition = resolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
             faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                ctx, capability, eventLogId, new PermanentFaultException(0, e.getMessage()));
-            return Uni.createFrom().voidItem();
+                                 ctx, capability, eventLogId, new PermanentFaultException(0, e.getMessage()));
+            return;
         }
 
         WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
@@ -85,35 +83,35 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             inputDataJson = objectMapper.writeValueAsString(inputData);
         } catch (Exception e) {
             faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                ctx, capability, eventLogId, new PermanentFaultException(0,
-                    "Failed to serialize inputData: " + e.getMessage()));
-            return Uni.createFrom().voidItem();
+                                 ctx, capability, eventLogId, new PermanentFaultException(0,
+                                                                                          "Failed to serialize inputData: " + e.getMessage()));
+            return;
         }
 
         if (inputDataJson.getBytes().length > maxInputBytes) {
             faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                ctx, capability, eventLogId, new PermanentFaultException(0,
-                    "Input data (" + inputDataJson.getBytes().length
-                        + " bytes) exceeds maxInputBytes limit (" + maxInputBytes + ")"));
-            return Uni.createFrom().voidItem();
+                                 ctx, capability, eventLogId, new PermanentFaultException(0,
+                                                                                          "Input data (" + inputDataJson.getBytes().length
+                                                                                          + " bytes) exceeds maxInputBytes limit (" + maxInputBytes + ")"));
+            return;
         }
 
-        return Uni.createFrom().item(() -> {
+        try {
             PendingCompletion pending = registry.register(
-                K8sWorkerConstants.WORKER_TYPE,
-                K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                ctx, capability, eventLogId,
-                Duration.ofSeconds(definition.timeoutSeconds() + 300),
-                Map.of(
-                    "cleanup", definition.cleanup().name(),
-                    "maxOutputBytes", String.valueOf(definition.maxOutputBytes())
-                ));
+                    K8sWorkerConstants.WORKER_TYPE,
+                    K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
+                    ctx, capability, eventLogId,
+                    Duration.ofSeconds(definition.timeoutSeconds() + 300),
+                    Map.of(
+                            "cleanup", definition.cleanup().name(),
+                            "maxOutputBytes", String.valueOf(definition.maxOutputBytes())
+                          ));
 
             try {
                 Job job = K8sJobBuilder.build(definition, pending.dispatchId(),
-                    instance.getUuid().toString(), instance.tenancyId,
-                    capability.name(), ctx.idempotency(), inputDataJson,
-                    worker.name(), eventLogId, ctx.bindingName());
+                                              instance.getUuid().toString(), instance.tenancyId,
+                                              capability.name(), ctx.idempotency(), inputDataJson,
+                                              worker.name(), eventLogId, ctx.bindingName());
                 kubernetesClient.resource(job).create();
             } catch (KubernetesClientException e) {
                 registry.complete(pending.dispatchId());
@@ -122,14 +120,10 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                 registry.complete(pending.dispatchId());
                 throw e;
             }
-            return null;
-        }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
-          .replaceWithVoid()
-          .onFailure().recoverWithUni(t -> {
-              faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                  ctx, capability, eventLogId, t);
-              return Uni.createFrom().voidItem();
-          });
+        } catch (Exception t) {
+            faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
+                                 ctx, capability, eventLogId, t);
+        }
     }
 
     private RuntimeException classifyApiServerError(KubernetesClientException e) {
@@ -150,21 +144,21 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> schedulePersistedEvent(EventLog scheduledEventLog) {
+    public void schedulePersistedEvent(EventLog scheduledEventLog) {
         if (scheduledEventLog.getMetadata() == null) {
-            return Uni.createFrom().voidItem();
+            return;
         }
         String capabilityName = scheduledEventLog.getMetadata().has("capabilityName")
-            ? scheduledEventLog.getMetadata().get("capabilityName").asText() : null;
+                                ? scheduledEventLog.getMetadata().get("capabilityName").asText() : null;
         String workerName = scheduledEventLog.getMetadata().has("workerName")
-            ? scheduledEventLog.getMetadata().get("workerName").asText() : null;
+                            ? scheduledEventLog.getMetadata().get("workerName").asText() : null;
         String bindingName = scheduledEventLog.getMetadata().has("bindingName")
-            ? scheduledEventLog.getMetadata().get("bindingName").asText() : null;
+                             ? scheduledEventLog.getMetadata().get("bindingName").asText() : null;
 
         if (capabilityName == null || workerName == null) {
             LOG.warnf("schedulePersistedEvent: missing metadata — capabilityName=%s workerName=%s",
-                capabilityName, workerName);
-            return Uni.createFrom().voidItem();
+                      capabilityName, workerName);
+            return;
         }
 
         JobDefinition definition;
@@ -172,59 +166,52 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             definition = resolver.resolve(capabilityName, scheduledEventLog.tenancyId);
         } catch (Exception e) {
             LOG.warnf("schedulePersistedEvent: capability '%s' not resolvable — config removed?",
-                capabilityName);
-            return Uni.createFrom().voidItem();
+                      capabilityName);
+            return;
         }
 
-        UUID caseId = scheduledEventLog.getCaseId();
-        String tenancyId = scheduledEventLog.tenancyId;
-        Long eventLogId = scheduledEventLog.id;
+        UUID   caseId     = scheduledEventLog.getCaseId();
+        String tenancyId  = scheduledEventLog.tenancyId;
+        Long   eventLogId = scheduledEventLog.id;
 
-        return Uni.createFrom().item(() -> {
-            Map<String, String> labelSelector = Map.of(
+        Map<String, String> labelSelector = Map.of(
                 K8sWorkerConstants.MANAGED_BY_LABEL, K8sWorkerConstants.MANAGED_BY_VALUE,
                 K8sWorkerConstants.CASE_ID_LABEL, caseId.toString(),
                 K8sWorkerConstants.CAPABILITY_LABEL, capabilityName,
                 K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
 
-            for (String ns : resolver.namespaces()) {
-                var existing = kubernetesClient.resources(Job.class)
-                    .inNamespace(ns).withLabels(labelSelector).list();
-                if (!existing.getItems().isEmpty()) {
-                    LOG.infof("schedulePersistedEvent: existing Job found for case %s capability %s — informer handles it",
-                        caseId, capabilityName);
-                    return false;
-                }
+        for (String ns : resolver.namespaces()) {
+            var existing = kubernetesClient.resources(Job.class)
+                                           .inNamespace(ns).withLabels(labelSelector).list();
+            if (!existing.getItems().isEmpty()) {
+                LOG.infof("schedulePersistedEvent: existing Job found for case %s capability %s — informer handles it",
+                          caseId, capabilityName);
+                return;
             }
-            return true;
-        }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
-          .onItem().transformToUni(shouldRedispatch -> {
-              if (!shouldRedispatch) {
-                  return Uni.createFrom().voidItem();
-              }
-              CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId);
-                  if (instance == null) {
-                      LOG.warnf("schedulePersistedEvent: CaseInstance %s not found — case closed?", caseId);
-                      return Uni.createFrom().voidItem();
-                  }
-                  Worker worker = Worker.builder()
-                      .name(workerName)
-                      .capabilityName(capabilityName)
-                      .noFunction()
-                      .build();
-                  Capability capability = Capability.of(capabilityName, "", "");
-                  Map<String, Object> inputData;
-                  try {
-                      inputData = scheduledEventLog.getPayload() != null
-                          ? objectMapper.convertValue(scheduledEventLog.getPayload(),
-                              new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {})
-                          : Map.of();
-                  } catch (Exception e) {
-                      inputData = Map.of();
-                  }
-                  LOG.infof("schedulePersistedEvent: re-dispatching case %s capability %s",
-                      caseId, capabilityName);
-                  return submit(eventLogId, instance, worker, capability, inputData, bindingName);
-          });
+        }
+
+        CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId);
+        if (instance == null) {
+            LOG.warnf("schedulePersistedEvent: CaseInstance %s not found — case closed?", caseId);
+            return;
+        }
+        Worker worker = Worker.builder()
+                              .name(workerName)
+                              .capabilityName(capabilityName)
+                              .noFunction()
+                              .build();
+        Capability          capability = Capability.of(capabilityName, "", "");
+        Map<String, Object> inputData;
+        try {
+            inputData = scheduledEventLog.getPayload() != null
+                        ? objectMapper.convertValue(scheduledEventLog.getPayload(),
+                                                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {})
+                        : Map.of();
+        } catch (Exception e) {
+            inputData = Map.of();
+        }
+        LOG.infof("schedulePersistedEvent: re-dispatching case %s capability %s",
+                  caseId, capabilityName);
+        submit(eventLogId, instance, worker, capability, inputData, bindingName);
     }
 }

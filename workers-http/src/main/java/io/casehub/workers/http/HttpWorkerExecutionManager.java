@@ -2,24 +2,22 @@ package io.casehub.workers.http;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.worker.api.Capability;
-import io.casehub.worker.api.Worker;
-import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.utils.WorkerExecutionKeys;
 import io.casehub.engine.common.spi.scheduler.WorkerBackend;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.CasehubWorkerHeaders;
 import io.casehub.workers.common.PendingCompletion;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.RetryAfterException;
 import io.casehub.workers.common.WorkerCorrelationContext;
-import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkerFaultPublisher;
+import io.casehub.workers.common.WorkerProvisioningException;
 import io.casehub.workers.common.WorkerRetrySupport;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
-import io.smallrye.mutiny.Uni;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
@@ -29,14 +27,15 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
+
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.jboss.logging.Logger;
 
 @WorkerBackend
 @Priority(10)
@@ -65,25 +64,25 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData) {
-        return submit(eventLogId, instance, worker, capability, inputData, null);
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData) {
+        submit(eventLogId, instance, worker, capability, inputData, null);
     }
 
     @Override
-    public Uni<Void> submit(Long eventLogId, CaseInstance instance, Worker worker,
-                            Capability capability, Map<String, Object> inputData,
-                            String bindingName) {
+    public void submit(Long eventLogId, CaseInstance instance, Worker worker,
+                       Capability capability, Map<String, Object> inputData,
+                       String bindingName) {
         ResolvedEndpoint endpoint;
         try {
             endpoint = httpEndpointResolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             LOG.errorf("HTTP endpoint for capability %s missing at dispatch time", capability.name());
             faultPublisher.fault(
-                HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
-                buildCtx(instance, worker, capability, inputData, bindingName),
-                capability, eventLogId, e);
-            return Uni.createFrom().voidItem();
+                    HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
+                    buildCtx(instance, worker, capability, inputData, bindingName),
+                    capability, eventLogId, e);
+            return;
         }
 
         WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
@@ -93,97 +92,91 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
             resolvedUrl = interpolateUrl(endpoint.url(), inputData);
         } catch (PermanentFaultException e) {
             faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, e);
-            return Uni.createFrom().voidItem();
+            return;
         }
 
         if (endpoint.mode() == ExchangeMode.SYNC) {
-            return submitSync(ctx, endpoint, resolvedUrl, capability, inputData, eventLogId);
+            submitSync(ctx, endpoint, resolvedUrl, capability, inputData, eventLogId);
+        } else {
+            submitAsync(ctx, endpoint, resolvedUrl, capability, inputData, eventLogId);
         }
-        return submitAsync(ctx, endpoint, resolvedUrl, capability, inputData, eventLogId);
     }
 
-    private Uni<Void> submitSync(WorkerCorrelationContext ctx, ResolvedEndpoint endpoint,
-                                  String resolvedUrl, Capability capability,
-                                  Map<String, Object> inputData, Long eventLogId) {
+    private void submitSync(WorkerCorrelationContext ctx, ResolvedEndpoint endpoint,
+                            String resolvedUrl, Capability capability,
+                            Map<String, Object> inputData, Long eventLogId) {
         HttpRequest<Buffer> request = webClient.requestAbs(
-            HttpMethod.valueOf(endpoint.method()), resolvedUrl);
+                HttpMethod.valueOf(endpoint.method()), resolvedUrl);
         request.timeout(endpoint.timeoutSeconds() * 1000L);
 
-        // CaseHub headers first
         request.putHeader(CasehubWorkerHeaders.IDEMPOTENCY, ctx.idempotency());
         request.putHeader(CasehubWorkerHeaders.CASE_ID, ctx.caseInstance().getUuid().toString());
         request.putHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
         request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
 
-        // Endpoint headers AFTER — endpoint wins on collision
         endpoint.headers().forEach(request::putHeader);
 
-        return request.sendJson(inputData)
-            .flatMap(response -> handleResponse(ctx, response))
-            .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
-                return Uni.createFrom().voidItem();
-            });
+        try {
+            HttpResponse<Buffer> response = request.sendJson(inputData).await().indefinitely();
+            handleResponse(ctx, response);
+        } catch (Exception t) {
+            faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
+        }
     }
 
-    private Uni<Void> submitAsync(WorkerCorrelationContext ctx, ResolvedEndpoint endpoint,
-                                   String resolvedUrl, Capability capability,
-                                   Map<String, Object> inputData, Long eventLogId) {
+    private void submitAsync(WorkerCorrelationContext ctx, ResolvedEndpoint endpoint,
+                             String resolvedUrl, Capability capability,
+                             Map<String, Object> inputData, Long eventLogId) {
         PendingCompletion pending = asyncWorkerCompletionRegistry.register(
-            HttpWorkerConstants.WORKER_TYPE,
-            HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
-            ctx, capability, eventLogId,
-            Duration.ofMinutes(asyncTimeoutMinutes), Map.of());
+                HttpWorkerConstants.WORKER_TYPE,
+                HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT,
+                ctx, capability, eventLogId,
+                Duration.ofMinutes(asyncTimeoutMinutes), Map.of());
 
         HttpRequest<Buffer> request = webClient.requestAbs(
-            HttpMethod.valueOf(endpoint.method()), resolvedUrl);
+                HttpMethod.valueOf(endpoint.method()), resolvedUrl);
 
-        // CaseHub headers first
         request.putHeader(CasehubWorkerHeaders.IDEMPOTENCY, ctx.idempotency());
         request.putHeader(CasehubWorkerHeaders.CASE_ID, ctx.caseInstance().getUuid().toString());
         request.putHeader(CasehubWorkerHeaders.TENANCY_ID, ctx.tenancyId());
         request.putHeader(CasehubWorkerHeaders.TASK_TYPE, capability.name());
-        // Async-specific headers
         request.putHeader(CasehubWorkerHeaders.WORKER_ID, pending.dispatchId());
         request.putHeader(CasehubWorkerHeaders.CALLBACK_TOKEN, pending.callbackToken());
 
-        // Endpoint headers AFTER — endpoint wins on collision
         endpoint.headers().forEach(request::putHeader);
 
-        return request.sendJson(inputData)
-            .flatMap(response -> {
-                int status = response.statusCode();
-                if (status >= 200 && status < 300) {
-                    return Uni.createFrom().<Void>voidItem();
-                }
-                if (status == 429) {
-                    String retryAfter = response.getHeader("Retry-After");
-                    RuntimeException ex = WorkerRetrySupport.parseRetryAfter(retryAfter, status, response.statusMessage());
-                    if (ex instanceof RetryAfterException ra) {
-                        long remainingMs = java.time.Duration.between(
+        try {
+            HttpResponse<Buffer> response = request.sendJson(inputData).await().indefinitely();
+            int                  status   = response.statusCode();
+            if (status >= 200 && status < 300) {
+                return;
+            }
+            if (status == 429) {
+                String           retryAfter = response.getHeader("Retry-After");
+                RuntimeException ex         = WorkerRetrySupport.parseRetryAfter(retryAfter, status, response.statusMessage());
+                if (ex instanceof RetryAfterException ra) {
+                    long remainingMs = java.time.Duration.between(
                             java.time.Instant.now(), pending.expiresAt()).toMillis();
-                        long capped = Math.min(ra.retryAfterMs(), Math.max(0, remainingMs));
-                        throw new RetryAfterException(capped, ra.getMessage());
-                    }
-                    throw ex;
+                    long capped = Math.min(ra.retryAfterMs(), Math.max(0, remainingMs));
+                    throw new RetryAfterException(capped, ra.getMessage());
                 }
-                if (status >= 400 && status < 500) {
-                    throw new PermanentFaultException(status, status + " " + response.statusMessage());
-                }
-                throw new RuntimeException(status + " " + response.statusMessage());
-            })
-            .onFailure().recoverWithUni(t -> {
-                faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
-                return Uni.createFrom().voidItem();
-            });
+                throw ex;
+            }
+            if (status >= 400 && status < 500) {
+                throw new PermanentFaultException(status, status + " " + response.statusMessage());
+            }
+            throw new RuntimeException(status + " " + response.statusMessage());
+        } catch (Exception t) {
+            faultPublisher.fault(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, ctx, capability, eventLogId, t);
+        }
     }
 
-    private Uni<Void> handleResponse(WorkerCorrelationContext ctx, HttpResponse<Buffer> response) {
+    private void handleResponse(WorkerCorrelationContext ctx, HttpResponse<Buffer> response) {
         int status = response.statusCode();
         if (status >= 200 && status < 300) {
             Map<String, Object> output = deserializeBody(response);
             completionPublisher.complete(ctx, output);
-            return Uni.createFrom().voidItem();
+            return;
         }
         if (status == 429) {
             String retryAfter = response.getHeader("Retry-After");
@@ -192,7 +185,6 @@ public class HttpWorkerExecutionManager implements WorkerExecutionManager {
         if (status >= 400 && status < 500) {
             throw new PermanentFaultException(status, status + " " + response.statusMessage());
         }
-        // 5xx
         throw new RuntimeException(status + " " + response.statusMessage());
     }
 
