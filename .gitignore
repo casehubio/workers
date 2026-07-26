@@ -9,3 +9,5 @@ target/
 *.iws
 .mvn/
 wksp
+.claude
+package-lock.json
