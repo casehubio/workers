@@ -13,7 +13,6 @@ import io.casehub.platform.api.governance.BackoffStrategy;
 import io.casehub.platform.api.governance.ExecutionPolicy;
 import io.casehub.platform.api.governance.RetryPolicy;
 import io.casehub.worker.api.Worker;
-import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -117,13 +116,9 @@ public class WorkerRetrySupport {
         return new RuntimeException(message);
     }
 
-    /**
-     * Persists a WORKER_EXECUTION_FAILED event log entry with inputDataHash and
-     * errorMessage metadata.
-     */
-    public Uni<Void> persistFailureLog(CaseInstance instance, Worker worker,
-                                        String inputDataHash, String errorMsg,
-                                        String tenancyId) {
+    public void persistFailureLog(CaseInstance instance, Worker worker,
+                                  String inputDataHash, String errorMsg,
+                                  String tenancyId) {
         EventLog failureLog = new EventLog();
         failureLog.setCaseId(instance.getUuid());
         failureLog.setWorkerId(worker.name());
@@ -132,29 +127,23 @@ public class WorkerRetrySupport {
         failureLog.setTimestamp(Instant.now());
         String msg = (errorMsg != null) ? errorMsg : "unknown";
         failureLog.setMetadata(OBJECT_MAPPER.createObjectNode()
-            .put("inputDataHash", inputDataHash)
-            .put("errorMessage", msg));
+                                            .put("inputDataHash", inputDataHash)
+                                            .put("errorMessage", msg));
 
         eventLogRepository.append(failureLog, tenancyId);
-        return Uni.createFrom().voidItem();
     }
 
-    /**
-     * Counts previous WORKER_EXECUTION_FAILED entries for a given case/worker/inputDataHash
-     * combination. Used to determine whether retries are exhausted.
-     */
-    public Uni<Long> countFailedAttempts(UUID caseId, String workerId,
-                                          String inputDataHash, String tenancyId) {
-        long count = eventLogRepository
-            .findByCaseAndWorkerAndType(caseId, workerId, CaseHubEventType.WORKER_EXECUTION_FAILED, tenancyId)
-            .stream()
-            .filter(log -> {
-                JsonNode meta = log.getMetadata();
-                JsonNode node = meta == null ? null : meta.get("inputDataHash");
-                return node != null && inputDataHash.equals(node.asText());
-            })
-            .count();
-        return Uni.createFrom().item(count);
+    public long countFailedAttempts(UUID caseId, String workerId,
+                                    String inputDataHash, String tenancyId) {
+        return eventLogRepository
+                       .findByCaseAndWorkerAndType(caseId, workerId, CaseHubEventType.WORKER_EXECUTION_FAILED, tenancyId)
+                       .stream()
+                       .filter(log -> {
+                           JsonNode meta = log.getMetadata();
+                           JsonNode node = meta == null ? null : meta.get("inputDataHash");
+                           return node != null && inputDataHash.equals(node.asText());
+                       })
+                       .count();
     }
 
     /**

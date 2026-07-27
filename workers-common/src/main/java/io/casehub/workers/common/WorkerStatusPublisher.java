@@ -1,6 +1,7 @@
 package io.casehub.workers.common;
 
 import io.casehub.api.model.WorkResult;
+import io.casehub.api.spi.WorkerStatusListener;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 

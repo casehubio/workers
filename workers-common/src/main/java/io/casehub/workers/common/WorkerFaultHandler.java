@@ -2,19 +2,18 @@ package io.casehub.workers.common;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.casehub.platform.api.governance.RetryPolicy;
-import io.casehub.worker.api.Worker;
-import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.internal.history.EventLog;
+import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
-import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
+import io.casehub.platform.api.governance.RetryPolicy;
+import io.casehub.worker.api.Worker;
 import io.vertx.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.Map;
 import org.jboss.logging.Logger;
+
+import java.util.Map;
 
 @ApplicationScoped
 public class WorkerFaultHandler {
@@ -28,64 +27,62 @@ public class WorkerFaultHandler {
     @Inject Vertx vertx;
     @Inject EventLogRepository eventLogRepository;
 
-    public Uni<Void> handleFault(WorkerFaultEvent event) {
-        CaseInstance instance = event.caseInstance();
-        Worker worker = event.worker();
-        String inputDataHash = event.inputDataHash();
-        String tenancyId = instance.tenancyId;
+    public void handleFault(WorkerFaultEvent event) {
+        CaseInstance instance      = event.caseInstance();
+        Worker       worker        = event.worker();
+        String       inputDataHash = event.inputDataHash();
+        String       tenancyId     = instance.tenancyId;
         String errorMsg = (event.cause() != null && event.cause().getMessage() != null)
-            ? event.cause().getMessage() : "unknown";
+                          ? event.cause().getMessage() : "unknown";
 
-        return retrySupport.persistFailureLog(instance, worker, inputDataHash, errorMsg, tenancyId)
-            .flatMap(ignored -> {
-                if (event.cause() instanceof PermanentFaultException) {
-                    retrySupport.publishRetriesExhausted(
+        try {
+            retrySupport.persistFailureLog(instance, worker, inputDataHash, errorMsg, tenancyId);
+
+            if (event.cause() instanceof PermanentFaultException) {
+                retrySupport.publishRetriesExhausted(
                         instance.getUuid(), worker.name(), inputDataHash,
                         event.bindingName(), tenancyId);
-                    return Uni.createFrom().voidItem();
-                }
+                return;
+            }
 
-                return retrySupport.countFailedAttempts(
-                        instance.getUuid(), worker.name(), inputDataHash, tenancyId)
-                    .flatMap(failureCount -> {
-                        RetryPolicy retryPolicy = WorkerRetrySupport.resolveRetryPolicy(worker);
-                        if (failureCount < retryPolicy.maxAttempts()) {
-                            long delayMs;
-                            if (event.cause() instanceof RetryAfterException ra) {
-                                delayMs = ra.retryAfterMs();
-                            } else {
-                                delayMs = WorkerRetrySupport.computeBackoffDelayMs(
-                                    retryPolicy, failureCount + 1);
-                            }
-                            return reloadAndResubmit(event, delayMs);
-                        } else {
-                            retrySupport.publishRetriesExhausted(
-                                instance.getUuid(), worker.name(), inputDataHash,
-                                event.bindingName(), tenancyId);
-                            return Uni.createFrom().voidItem();
-                        }
-                    });
-            })
-            .onFailure().recoverWithUni(ex -> {
-                LOG.errorf(ex, "Fault handling failed for worker %s case %s — case may stall",
-                           worker.name(), instance.getUuid());
-                return Uni.createFrom().voidItem();
-            });
+            long failureCount = retrySupport.countFailedAttempts(
+                    instance.getUuid(), worker.name(), inputDataHash, tenancyId);
+            RetryPolicy retryPolicy = WorkerRetrySupport.resolveRetryPolicy(worker);
+
+            if (failureCount < retryPolicy.maxAttempts()) {
+                long delayMs;
+                if (event.cause() instanceof RetryAfterException ra) {
+                    delayMs = ra.retryAfterMs();
+                } else {
+                    delayMs = WorkerRetrySupport.computeBackoffDelayMs(
+                            retryPolicy, failureCount + 1);
+                }
+                reloadAndResubmit(event, delayMs);
+            } else {
+                retrySupport.publishRetriesExhausted(
+                        instance.getUuid(), worker.name(), inputDataHash,
+                        event.bindingName(), tenancyId);
+            }
+        } catch (Exception ex) {
+            LOG.errorf(ex, "Fault handling failed for worker %s case %s — case may stall",
+                       worker.name(), instance.getUuid());
+        }
     }
 
-    private Uni<Void> reloadAndResubmit(WorkerFaultEvent event, long delayMs) {
+    private void reloadAndResubmit(WorkerFaultEvent event, long delayMs) {
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
         EventLog eventLog = eventLogRepository.findById(
-            Long.parseLong(event.eventLogId()), event.caseInstance().tenancyId);
+                Long.parseLong(event.eventLogId()), event.caseInstance().tenancyId);
         Map<String, Object> inputData =
-            OBJECT_MAPPER.convertValue(eventLog.getPayload(), MAP_TYPE);
-        return Uni.createFrom().<Void>emitter(em -> {
-                long timerId = vertx.setTimer(delayMs, id -> em.complete(null));
-                em.onTermination(() -> vertx.cancelTimer(timerId));
-            })
-            .emitOn(Infrastructure.getDefaultWorkerPool())
-            .flatMap(ignored -> workerExecutionManager.submit(
+                OBJECT_MAPPER.convertValue(eventLog.getPayload(), MAP_TYPE);
+        workerExecutionManager.submit(
                 Long.parseLong(event.eventLogId()),
                 event.caseInstance(), event.worker(), event.capability(), inputData,
-                event.bindingName()));
+                event.bindingName());
     }
 }
