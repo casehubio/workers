@@ -82,7 +82,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of("key", "val")).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"));
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -101,7 +101,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -118,7 +118,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -137,7 +137,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -157,7 +157,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -180,7 +180,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -201,7 +201,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -224,7 +224,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -249,7 +249,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         verify(request).putHeader(eq("casehub-idempotency"), anyString());
         verify(request).putHeader(eq("casehub-case-id"), eq(instance.getUuid().toString()));
@@ -271,7 +271,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         // CaseHub header set first, then endpoint header overrides
         var inOrder = inOrder(request);
@@ -299,7 +299,7 @@ class HttpWorkerExecutionManagerTest {
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
-        manager.submit(1L, instance, worker, cap, Map.of("key", "val")).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"));
 
         verify(asyncWorkerCompletionRegistry).register(
             eq(HttpWorkerConstants.WORKER_TYPE),
@@ -329,7 +329,7 @@ class HttpWorkerExecutionManagerTest {
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -358,7 +358,7 @@ class HttpWorkerExecutionManagerTest {
             eq(cap), eq(1L), eq(Duration.ofMinutes(60)), eq(Map.of())))
             .thenReturn(pending);
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         verify(request).putHeader(CasehubWorkerHeaders.WORKER_ID, pending.dispatchId());
         verify(request).putHeader(CasehubWorkerHeaders.CALLBACK_TOKEN, pending.callbackToken());
@@ -374,7 +374,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         verify(request, never()).putHeader(eq(CasehubWorkerHeaders.WORKER_ID), anyString());
         verify(request, never()).putHeader(eq(CasehubWorkerHeaders.CALLBACK_TOKEN), anyString());
@@ -399,7 +399,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -454,13 +454,13 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
             eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
-        assertThat(causeCaptor.getValue()).isInstanceOf(java.net.ConnectException.class);
+        assertThat(causeCaptor.getValue()).hasRootCauseInstanceOf(java.net.ConnectException.class);
         verify(completionPublisher, never()).complete(any(), any());
     }
 
@@ -474,13 +474,13 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
             eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), causeCaptor.capture());
-        assertThat(causeCaptor.getValue()).isInstanceOf(java.util.concurrent.TimeoutException.class);
+        assertThat(causeCaptor.getValue()).hasRootCauseInstanceOf(java.util.concurrent.TimeoutException.class);
         verify(completionPublisher, never()).complete(any(), any());
     }
 
@@ -509,7 +509,7 @@ class HttpWorkerExecutionManagerTest {
         when(response.getHeader("Retry-After")).thenReturn("3600");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(response));
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(
@@ -531,7 +531,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "missing");
         Capability cap = WorkerTestSupport.testCapability("missing");
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         verify(faultPublisher).fault(
             eq(HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT),
@@ -552,8 +552,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of("key", "val"), "binding-x")
-            .await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"), "binding-x");
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -571,8 +570,7 @@ class HttpWorkerExecutionManagerTest {
         Worker worker = WorkerTestSupport.testWorker("w", "cap");
         Capability cap = WorkerTestSupport.testCapability("cap");
 
-        manager.submit(1L, instance, worker, cap, Map.of("key", "val"))
-            .await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of("key", "val"));
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);

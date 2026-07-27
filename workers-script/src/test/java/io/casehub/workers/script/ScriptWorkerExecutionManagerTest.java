@@ -47,7 +47,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:json-script"),
             WorkerTestSupport.testCapability("script:json-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(), captor.capture());
@@ -66,7 +66,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:text-script"),
             WorkerTestSupport.testCapability("script:text-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(), captor.capture());
@@ -88,7 +88,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:array-script"),
             WorkerTestSupport.testCapability("script:array-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(), captor.capture());
@@ -109,7 +109,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:fail-script"),
             WorkerTestSupport.testCapability("script:fail-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(faultPublisher).fault(
             eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
@@ -130,7 +130,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:slow-script"),
             WorkerTestSupport.testCapability("script:slow-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(faultPublisher).fault(
             eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
@@ -150,7 +150,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:stdin-script"),
             WorkerTestSupport.testCapability("script:stdin-script"),
-            Map.of("key", "value")).await().indefinitely();
+            Map.of("key", "value"));
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(), captor.capture());
@@ -169,7 +169,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:env-script"),
             WorkerTestSupport.testCapability("script:env-script"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(), captor.capture());
@@ -188,7 +188,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:missing-cmd"),
             WorkerTestSupport.testCapability("script:missing-cmd"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(faultPublisher).fault(
             eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
@@ -204,7 +204,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:missing"),
             WorkerTestSupport.testCapability("script:missing"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(faultPublisher).fault(
             eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
@@ -226,7 +226,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:echo-script"),
             WorkerTestSupport.testCapability("script:echo-script"),
-            Map.of(), "binding-x").await().indefinitely();
+            Map.of(), "binding-x");
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -246,7 +246,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "script:echo-script2"),
             WorkerTestSupport.testCapability("script:echo-script2"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);

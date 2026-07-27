@@ -9,7 +9,6 @@ import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.WorkerFaultHandler;
-import io.smallrye.mutiny.Uni;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -25,16 +24,14 @@ class CamelWorkerFaultEventHandlerTest {
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
         instance.tenancyId = "t1";
-        Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+        Worker worker = Worker.builder().name("w1").capabilityNames().function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         Capability capability = Capability.of("cap", "", "");
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, capability, "hash-1", "1",
             new RuntimeException("test"), null);
 
-        when(faultHandler.handleFault(event)).thenReturn(Uni.createFrom().voidItem());
-
-        handler.onFault(event).await().indefinitely();
+        handler.onFault(event);
 
         verify(faultHandler).handleFault(event);
     }

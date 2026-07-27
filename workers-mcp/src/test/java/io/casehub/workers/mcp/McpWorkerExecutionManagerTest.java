@@ -81,7 +81,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general", "text", "hello"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -105,7 +105,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -129,7 +129,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -153,7 +153,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -174,7 +174,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -194,7 +194,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         verify(sessionManager).invalidate("slack");
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
@@ -216,7 +216,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         verify(sessionManager, never()).invalidate(anyString());
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
@@ -236,7 +236,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -255,7 +255,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -274,7 +274,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -295,7 +295,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(McpWorkerEventBusAddresses.MCP_WORKER_FAULT),
@@ -318,7 +318,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         verify(request).putHeader("Content-Type", "application/json");
         verify(request).putHeader("Accept", "application/json, text/event-stream");
@@ -344,7 +344,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -354,7 +354,7 @@ class McpWorkerExecutionManagerTest {
 
     @Test
     void schedulePersistedEvent_returnsVoid() {
-        assertThat(manager.schedulePersistedEvent(new EventLog()).await().indefinitely()).isNull();
+        manager.schedulePersistedEvent(new EventLog());
     }
 
     @Test
@@ -386,7 +386,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"), "binding-x")
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -407,7 +407,7 @@ class McpWorkerExecutionManagerTest {
         Capability cap = WorkerTestSupport.testCapability(CAP_TAG);
 
         manager.submit(1L, instance, worker, cap, Map.of("channel", "#general"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);

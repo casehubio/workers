@@ -49,7 +49,7 @@ class CamelWorkerExecutionManagerTest {
         Capability cap = Capability.of("missing", "", "");
         when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), any(WorkerProvisioningException.class));
@@ -64,7 +64,7 @@ class CamelWorkerExecutionManagerTest {
         Capability cap = Capability.of("missing", "", "");
         when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
-        manager.submit(1L, instance, worker, cap, Map.of(), "binding-x").await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of(), "binding-x");
 
         org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -80,7 +80,7 @@ class CamelWorkerExecutionManagerTest {
         Capability cap = Capability.of("missing", "", "");
         when(resolver.resolve(eq("missing"), anyString())).thenThrow(WorkerProvisioningException.noRouteFound("missing"));
 
-        manager.submit(1L, instance, worker, cap, Map.of()).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, Map.of());
 
         org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -112,6 +112,6 @@ class CamelWorkerExecutionManagerTest {
     }
 
     private Worker testWorker() {
-        return Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+        return Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
     }
 }

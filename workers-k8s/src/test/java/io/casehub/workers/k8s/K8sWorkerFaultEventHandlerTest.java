@@ -9,7 +9,6 @@ import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.workers.common.WorkerFaultHandler;
 import io.casehub.workers.testing.WorkerTestSupport;
-import io.smallrye.mutiny.Uni;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +24,7 @@ class K8sWorkerFaultEventHandlerTest {
         Worker worker = Worker.builder()
             .name("w1")
             .capabilityName("k8s:test")
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of())))
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of())))
             .build();
         Capability capability = WorkerTestSupport.testCapability("k8s:test");
 
@@ -33,9 +32,7 @@ class K8sWorkerFaultEventHandlerTest {
             instance, worker, capability, "hash-1", "1",
             new RuntimeException("job failed"), null);
 
-        when(faultHandler.handleFault(event)).thenReturn(Uni.createFrom().voidItem());
-
-        handler.onFault(event).await().indefinitely();
+        handler.onFault(event);
 
         verify(faultHandler).handleFault(event);
     }

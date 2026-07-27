@@ -411,7 +411,7 @@ class K8sJobInformerManagerTest {
         Capability capability = Capability.of("k8s:test", "", "");
         Worker worker = Worker.builder().name("w1")
             .capabilityName("k8s:test")
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1", null);
         return new PendingCompletion(dispatchId, K8sWorkerConstants.WORKER_TYPE,
             K8sWorkerEventBusAddresses.K8S_WORKER_FAULT, ctx, "token-1",

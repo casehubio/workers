@@ -70,7 +70,7 @@ class GitHubActionsWorkerExecutionManagerTest {
             "owner", "casehubio", "repo", "devtown",
             "workflow_id", "ci.yml", "ref", "main");
 
-        manager.submit(1L, instance, worker, cap, inputData).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, inputData);
 
         ArgumentCaptor<Map<String, Object>> outputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), outputCaptor.capture());
@@ -95,7 +95,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         verify(webClient).requestAbs(HttpMethod.POST,
             "https://api.github.com/repos/casehubio/devtown/actions/workflows/ci.yml/dispatches");
@@ -119,7 +119,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         inputData.put("ref", "main");
         inputData.put("inputs", Map.of("environment", "staging"));
 
-        manager.submit(1L, instance, worker, cap, inputData).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, inputData);
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
         verify(request).sendJson(bodyCaptor.capture());
@@ -143,7 +143,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
         verify(request).sendJson(bodyCaptor.capture());
@@ -166,7 +166,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "event_type", "upstream-published"))
-            .await().indefinitely();
+            ;
 
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), any());
     }
@@ -185,7 +185,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "event_type", "upstream-published"))
-            .await().indefinitely();
+            ;
 
         verify(webClient).requestAbs(HttpMethod.POST,
             "https://api.github.com/repos/casehubio/devtown/dispatches");
@@ -208,7 +208,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         inputData.put("event_type", "upstream-published");
         inputData.put("client_payload", Map.of("source", "casehub-engine"));
 
-        manager.submit(1L, instance, worker, cap, inputData).await().indefinitely();
+        manager.submit(1L, instance, worker, cap, inputData);
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
         verify(request).sendJson(bodyCaptor.capture());
@@ -232,7 +232,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "event_type", "upstream-published"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
         verify(request).sendJson(bodyCaptor.capture());
@@ -251,7 +251,7 @@ class GitHubActionsWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap,
             Map.of("repo", "devtown", "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -269,7 +269,7 @@ class GitHubActionsWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown", "workflow_id", "ci.yml"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -287,7 +287,7 @@ class GitHubActionsWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -309,7 +309,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -332,7 +332,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "event_type", "upstream-published"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -355,7 +355,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -378,7 +378,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -401,7 +401,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -423,7 +423,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -445,7 +445,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<Throwable> causeCaptor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT),
@@ -470,7 +470,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         verify(webClient).requestAbs(HttpMethod.POST,
             "https://github.example.com/api/v3/repos/casehubio/devtown/actions/workflows/ci.yml/dispatches");
@@ -490,7 +490,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         verify(request).putHeader("Authorization", "Bearer ghp_test_token");
         verify(request).putHeader("Accept", "application/vnd.github+json");
@@ -515,7 +515,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"), "binding-x")
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -537,7 +537,7 @@ class GitHubActionsWorkerExecutionManagerTest {
         manager.submit(1L, instance, worker, cap,
             Map.of("owner", "casehubio", "repo", "devtown",
                    "workflow_id", "ci.yml", "ref", "main"))
-            .await().indefinitely();
+            ;
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);

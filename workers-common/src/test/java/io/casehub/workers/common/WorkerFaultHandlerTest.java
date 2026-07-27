@@ -18,8 +18,6 @@ import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
-import io.smallrye.mutiny.Uni;
-import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import java.util.Map;
 import java.util.UUID;
@@ -52,10 +50,7 @@ class WorkerFaultHandlerTest {
         handler.vertx = vertx;
         handler.eventLogRepository = eventLogRepository;
 
-        // Default: persistFailureLog succeeds
-        when(retrySupport.persistFailureLog(any(), any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().voidItem());
-    }
+}
 
     @AfterEach
     void tearDown() {
@@ -72,7 +67,7 @@ class WorkerFaultHandlerTest {
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, null);
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         verify(retrySupport).persistFailureLog(instance, worker, "hash-1", "Bad Request", instance.tenancyId);
         verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1",
@@ -87,13 +82,13 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 100, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("transient error");
 
         // First failure — count=1, maxAttempts=3, so 1 < 3 → retry
         when(retrySupport.countFailedAttempts(any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().item(1L));
+            .thenReturn(1L);
 
         EventLog eventLog = new EventLog();
         ObjectNode payload = OBJECT_MAPPER.createObjectNode().put("key", "value");
@@ -101,13 +96,10 @@ class WorkerFaultHandlerTest {
         when(eventLogRepository.findById(42L, instance.tenancyId))
             .thenReturn(eventLog);
 
-        when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().voidItem());
-
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, null);
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         // Verify submit was called with the reloaded input data
         ArgumentCaptor<Map<String, Object>> inputCaptor = ArgumentCaptor.forClass(Map.class);
@@ -125,18 +117,18 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("500 error");
 
         // failureCount == maxAttempts → strict < means exhausted
         when(retrySupport.countFailedAttempts(any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().item(3L));
+            .thenReturn(3L);
 
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, null);
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         verify(retrySupport).publishRetriesExhausted(instance.getUuid(), "w1", "hash-1",
             null, instance.tenancyId);
@@ -149,12 +141,12 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 10000, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RetryAfterException cause = new RetryAfterException(200, "429 Too Many Requests");
 
         when(retrySupport.countFailedAttempts(any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().item(1L));
+            .thenReturn(1L);
 
         EventLog eventLog = new EventLog();
         ObjectNode payload = OBJECT_MAPPER.createObjectNode().put("key", "value");
@@ -162,14 +154,11 @@ class WorkerFaultHandlerTest {
         when(eventLogRepository.findById(42L, instance.tenancyId))
             .thenReturn(eventLog);
 
-        when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().voidItem());
-
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, null);
 
         // With a real Vertx timer, the delay of 200ms should complete
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         // Should have called submit (RetryAfter overrides configured backoff of 10000ms)
         verify(workerExecutionManager).submit(eq(42L), eq(instance), eq(worker), eq(cap), any(), eq(null));
@@ -182,23 +171,20 @@ class WorkerFaultHandlerTest {
         RetryPolicy retryPolicy = new RetryPolicy(3, 100, BackoffStrategy.FIXED);
         ExecutionPolicy ep = new ExecutionPolicy(5000, retryPolicy);
         Worker worker = Worker.builder().name("w1").capabilityNames().executionPolicy(ep)
-            .function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+            .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         Capability cap = testCapability("cap");
         RuntimeException cause = new RuntimeException("transient");
 
         when(retrySupport.countFailedAttempts(any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().item(1L));
+            .thenReturn(1L);
 
         EventLog eventLog = new EventLog();
         eventLog.setPayload(OBJECT_MAPPER.createObjectNode().put("k", "v"));
         when(eventLogRepository.findById(42L, instance.tenancyId)).thenReturn(eventLog);
-        when(workerExecutionManager.submit(anyLong(), any(), any(), any(), any(), any()))
-            .thenReturn(Uni.createFrom().voidItem());
-
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, "binding-x");
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         verify(workerExecutionManager).submit(
             eq(42L), eq(instance), eq(worker), eq(cap), any(), eq("binding-x"));
@@ -214,7 +200,7 @@ class WorkerFaultHandlerTest {
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, "binding-y");
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         verify(retrySupport).publishRetriesExhausted(
             instance.getUuid(), "w1", "hash-1", "binding-y", instance.tenancyId);
@@ -230,7 +216,7 @@ class WorkerFaultHandlerTest {
         WorkerFaultEvent event = new WorkerFaultEvent(
             instance, worker, cap, "hash-1", "42", cause, null);
 
-        handler.handleFault(event).await().indefinitely();
+        handler.handleFault(event);
 
         verify(retrySupport).publishRetriesExhausted(
             instance.getUuid(), "w1", "hash-1", null, instance.tenancyId);
@@ -246,7 +232,7 @@ class WorkerFaultHandlerTest {
     }
 
     private static Worker testWorker(String name) {
-        return Worker.builder().name(name).capabilityNames().function(new WorkerFunction.Sync<>(Map.class,ctx -> WorkerResult.of(Map.of()))).build();
+        return Worker.builder().name(name).capabilityNames().function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
     }
 
     private static Capability testCapability(String tag) {

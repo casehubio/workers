@@ -99,7 +99,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:report-gen"),
             WorkerTestSupport.testCapability("k8s:report-gen"),
-            Map.of("key", "value")).await().indefinitely();
+            Map.of("key", "value"));
 
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
             eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
@@ -115,7 +115,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:missing"),
             WorkerTestSupport.testCapability("k8s:missing"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
             any(WorkerCorrelationContext.class), any(Capability.class), eq(1L),
@@ -137,7 +137,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:test"),
             WorkerTestSupport.testCapability("k8s:test"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(registry).complete("dispatch-1");
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
@@ -161,7 +161,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:test"),
             WorkerTestSupport.testCapability("k8s:test"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         verify(registry).complete("dispatch-1");
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
@@ -179,7 +179,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:test"),
             WorkerTestSupport.testCapability("k8s:test"),
-            Map.of("large", "x".repeat(100))).await().indefinitely();
+            Map.of("large", "x".repeat(100)));
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
@@ -198,7 +198,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:missing"),
             WorkerTestSupport.testCapability("k8s:missing"),
-            Map.of(), "binding-x").await().indefinitely();
+            Map.of(), "binding-x");
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -216,7 +216,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCaseInstance(),
             WorkerTestSupport.testWorker("w1", "k8s:missing"),
             WorkerTestSupport.testCapability("k8s:missing"),
-            Map.of()).await().indefinitely();
+            Map.of());
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -253,7 +253,7 @@ class K8sWorkerExecutionManagerTest {
         mockK8sJobListEmpty();
         mockJobCreation();
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
             eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
@@ -266,7 +266,7 @@ class K8sWorkerExecutionManagerTest {
         EventLog eventLog = buildScheduledEventLog(CASE_ID, "t1", "w1", "k8s:test", 1L);
         mockK8sJobListReturns(buildRunningK8sJob());
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
     }
@@ -279,7 +279,7 @@ class K8sWorkerExecutionManagerTest {
             .thenReturn(null);
         mockK8sJobListEmpty();
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
     }
@@ -289,7 +289,7 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of());
         EventLog eventLog = buildScheduledEventLog(CASE_ID, "t1", "w1", "k8s:missing", 1L);
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
     }
@@ -309,7 +309,7 @@ class K8sWorkerExecutionManagerTest {
         mockK8sJobListEmpty();
         mockJobCreation();
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
@@ -331,7 +331,7 @@ class K8sWorkerExecutionManagerTest {
         mockK8sJobListEmpty();
         mockJobCreation();
 
-        manager.schedulePersistedEvent(eventLog).await().indefinitely();
+        manager.schedulePersistedEvent(eventLog);
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
