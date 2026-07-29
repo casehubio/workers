@@ -791,7 +791,7 @@ CDI displacement via classpath presence — `@ApplicationScoped` worker beans di
 - **URI template interpolation** — `{fieldName}` in URLs interpolated from `inputData` at dispatch time
 - **HTTP-specific fault classification** — 4xx (except 429) → `PermanentFaultException`; 429 → `RetryAfterException`
 
-Not closed here: L3 (lifecycle — C5), L2 (generic fault pipeline — C6). `EndpointRegistry` (platform#73) shipped — Tier 3 resolution wiring pending.
+Not closed here: L3 (lifecycle — C5), L2 (generic fault pipeline — C6). `EndpointRegistry` (platform#73) shipped — Tier 3 resolution wired (#12).
 
 ##### Key files
 
@@ -1053,7 +1053,7 @@ All other architectural decisions are documented inline in §9.4 layer entries.
 | `EndpointRegistry` wired (#12) | HTTP Tier 3 + MCP named endpoint auth now consume `EndpointRegistry` | Tenancy-aware resolution via `WorkerCapabilityResolver`. Provisioner probe uses `ProvisionContext.tenancyId()` (engine#530 shipped, wired in #15) | ✅ Done |
 | Upstream SNAPSHOT break | `Worker` constructor went private — `Worker.builder()` required | Fixed in tests; `WorkerTestSupport` review pending if engine-api publishes | ✅ Mitigated |
 | No subprocess sandboxing (workers-script) | Script execution runs with JVM process privileges | Acceptable for trusted operator-configured scripts; external sandboxing (containers, seccomp) is a deployment concern | Accepted risk |
-| K8s worker restart recovery (#17) | In-memory registry lost on restart. Long-running K8s Jobs (hours) observed by stale-worker detection cause duplicate dispatch + wasted compute | Issue #17 tracks registry persistence or K8s-side recovery (re-list Jobs with managed-by label on startup) | Tracked |
+| ~~K8s worker restart recovery (#17)~~ | ~~In-memory registry lost on restart~~ | Restart recovery via Job label metadata, `processTerminal` recovery, `schedulePersistedEvent`, eager resolver init | ✅ Done |
 | K8s multi-cluster dispatch (#16) | Single-cluster only (Quarkus-injected `KubernetesClient`) | Issue #16 tracks multi-cluster support | Tracked |
 
 ---
