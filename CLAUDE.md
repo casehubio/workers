@@ -156,6 +156,14 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard via `ConcurrentHashMap.newKeySet()`). Injects `CaseInstanceRepository`. Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
 | `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 
+## Documentation
+
+This repo owns its own documentation, synced to parent via subtree:
+- `docs/guides/consumer-guide.md` — for consumers: module overview, dispatch patterns, configuration
+- `docs/guides/contributor-guide.md` — for contributors: SPI internals, fault pipeline, engine integration
+
+Update the relevant guide in the same session when implementation changes modules, SPIs, or dispatch behaviour. Do not defer — drift compounds. Parent (`casehubio/parent`) aggregates these at `docs/repos/casehub-workers/` for RAG retrieval.
+
 ## Key Rules
 
 - `workers-testing` is never a compile or runtime dependency — test scope only.
