@@ -137,6 +137,12 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
         return serverResolver.canResolve(capabilityName, tenancyId);
     }
 
+
+    @Override
+    public void schedulePersistedEvent(io.casehub.engine.common.internal.history.EventLog scheduledEventLog) {
+        // no-op — MCP dispatch is synchronous, no in-flight state to recover
+    }
+
     @Override
     public int getActiveWorkCount(String workerId) {
         return 0;
