@@ -138,6 +138,10 @@ public class McpWorkerExecutionManager implements WorkerExecutionManager {
     }
 
     @Override
+    public void schedulePersistedEvent(io.casehub.engine.common.internal.history.EventLog scheduledEventLog) {
+    }
+
+    @Override
     public int getActiveWorkCount(String workerId) {
         return 0;
     }
