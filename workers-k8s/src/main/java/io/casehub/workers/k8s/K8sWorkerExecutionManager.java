@@ -190,7 +190,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             }
         }
 
-        CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId);
+        CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId).orElse(null);
         if (instance == null) {
             LOG.warnf("schedulePersistedEvent: CaseInstance %s not found — case closed?", caseId);
             return;

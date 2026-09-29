@@ -28,6 +28,7 @@ import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation;
 import io.smallrye.mutiny.Uni;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -249,7 +250,7 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
@@ -276,7 +277,7 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of("test", imageDef("test")));
         EventLog eventLog = buildScheduledEventLog(CASE_ID, "t1", "w1", "k8s:test", 1L);
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(null);
+            .thenReturn(Optional.empty());
         mockK8sJobListEmpty();
 
         manager.schedulePersistedEvent(eventLog);
@@ -305,7 +306,7 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
@@ -327,7 +328,7 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
