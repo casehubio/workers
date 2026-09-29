@@ -469,7 +469,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-1")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-1");
@@ -493,7 +493,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-3")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-3");
@@ -509,7 +509,7 @@ class K8sJobInformerManagerTest {
         job.getStatus().getConditions().get(0).setReason("DeadlineExceeded");
         when(registry.complete("dispatch-4")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-4");
@@ -525,7 +525,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-5")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(null);
+            .thenReturn(Optional.empty());
 
         manager.processTerminal(job, "dispatch-5");
 
@@ -540,7 +540,7 @@ class K8sJobInformerManagerTest {
             "dispatch-6", "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L,
             "idem-hash", "recovered-binding");
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(Optional.of(testCaseInstance));
 
         Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-6");
 
@@ -554,7 +554,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         // No annotation — pre-upgrade Job
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(Optional.of(testCaseInstance));
 
         Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-7");
 
