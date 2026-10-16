@@ -16,3 +16,5 @@ package-lock.json
 .worktrees
 .worktrees/
 .claude/
+
+.flattened-pom.xml
