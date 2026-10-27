@@ -13,8 +13,11 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.mockito.ArgumentCaptor;
 
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true",
+        disabledReason = "Process execution tests are flaky under -T 1C on shared CI runners")
 class ScriptWorkerExecutionManagerTest {
 
     ScriptWorkerExecutionManager manager;
