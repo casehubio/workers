@@ -70,7 +70,9 @@ class K8sWorkerExecutionManagerTest {
         manager.resolver = resolver;
         manager.registry = registry;
         manager.faultPublisher = faultPublisher;
-        manager.kubernetesClient = client;
+        K8sClusterManager clusterManager = new K8sClusterManager();
+        clusterManager.initialize(Map.of(), client);
+        manager.clusterManager = clusterManager;
         manager.informerManager = informerManager;
         manager.caseInstanceRepository = caseInstanceRepository;
         manager.objectMapper = new ObjectMapper();
@@ -82,7 +84,7 @@ class K8sWorkerExecutionManagerTest {
     private static JobDefinition imageDef(String name) {
         return new JobDefinition(name, "batch", "acme/" + name + ":latest",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     @Test

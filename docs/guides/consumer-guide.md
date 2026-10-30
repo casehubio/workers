@@ -24,7 +24,6 @@ This repo provides the *how* of worker execution (transport, session management,
 | `workers-mcp` | `casehub-workers-mcp` | MCP dispatch: Streamable HTTP transport, `tools/list` discovery, session management, dual response parsing (JSON + SSE) |
 | `workers-script` | `casehub-workers-script` | Script dispatch: local subprocess execution (shell, Python, JS) via `ProcessBuilder`, stdin JSON delivery |
 | `workers-k8s` | `casehub-workers-k8s` | Kubernetes Job dispatch: fabric8 client, watch-based completion via `SharedIndexInformer`, restart recovery from Job labels |
-| `workers-scenario` | `casehub-workers-scenario` | Scenario dispatch: trigger scenario executions on casehub-pages instances via GraphQL, async callback completion |
 | `workers-testing` | `casehub-workers-testing` | Test fixtures -- **test scope only, never compile/runtime** |
 
 **Activation:** Each worker module activates by classpath presence (`@ApplicationScoped`, no config required to enable). All modules can co-deploy on the same classpath -- `CompositeWorkerExecutionManager` (engine-runtime) discovers all `@WorkerBackend`-qualified execution managers and routes via `supports()`.
@@ -37,7 +36,7 @@ Lifecycle contract for a worker runtime -- the infrastructure that executes disp
 
 ```java
 public interface WorkerRuntime {
-    String workerType();              // e.g. "mcp", "http", "camel", "github-actions", "script", "k8s", "scenario"
+    String workerType();              // e.g. "mcp", "http", "camel", "github-actions", "script", "k8s"
     WorkerRuntimeStatus status();     // PENDING, RUNNING, FAULTED, STOPPED
     Uni<Void> initialize();           // PENDING -> RUNNING or FAULTED
     Uni<Void> shutdown();             // -> STOPPED
@@ -82,7 +81,6 @@ Each worker type uses a distinct capability tag format:
 | GitHub Actions | Fixed constants | `github-actions:workflow-dispatch`, `github-actions:repository-dispatch` |
 | Script | `script:{name}` | `script:run-analysis` |
 | K8s | `k8s:{name}` | `k8s:data-pipeline` |
-| Scenario | `scenario:{name}` | `scenario:onboard-users` |
 
 ### Dispatch Mechanisms
 
@@ -246,36 +244,20 @@ casehub.workers.k8s.jobs.data-pipeline.environment.DB_URL=jdbc:...
 casehub.workers.k8s.jobs.data-pipeline.labels.team=platform
 ```
 
-#### Scenario
+**Multi-cluster support:** Jobs can target named Kubernetes clusters by adding a `cluster` property. Define clusters pointing to kubeconfig contexts, then reference them in job definitions:
 
-Scenario automation dispatch via casehub-pages' GraphQL API. Triggers scenario executions that automate browser interactions (ARIA), GraphQL mutations, and REST calls on the target pages instance. Async completion via callback.
-
-Two input modes:
-- **Named script:** `inputData.scriptName` names a script in the pages library. Worker fetches the YAML via `GET /scenario/library/{name}/yaml`, then submits.
-- **Raw YAML:** `inputData.yaml` contains the scenario YAML directly. For ad-hoc automation.
-
-Both null → `PermanentFaultException`. Both present → `scriptName` takes precedence.
-
-Capability tag format: `scenario:{name}`. Endpoint resolution is 3-tier with `EndpointRegistry` (tenant-aware):
-
-1. **Tier 2 -- Config properties:** `casehub.workers.scenario.endpoints.{name}.url`
-2. **Tier 3 -- EndpointRegistry:** `Path.of("scenario", name)` with `EndpointProtocol.SCENARIO`
-
-Dispatch: GraphQL mutation `scenarioSubmit(yaml, callbackUrl, dispatchId, paused)` via Vert.x WebClient. Registers `PendingCompletion` in `AsyncWorkerCompletionRegistry`. Callback URL: `{casehub.workers.callback-base-url}/workers/complete/{dispatchId}`.
-
-Completion: pages POSTs outcome to the callback URL when the scenario finishes. Handled by the standard `WorkerCallbackResource`.
-
-Optional `inputData` fields: `params` (map passed to the scenario), `paused` (start paused, default false).
-
-Configuration:
 ```properties
-casehub.workers.callback-base-url=https://engine.example.com
-casehub.workers.scenario.default-timeout-seconds=600
-casehub.workers.scenario.endpoints.onboard.url=https://pages.example.com/graphql
-casehub.workers.scenario.endpoints.seed-data.url=https://pages.example.com/graphql
+# Cluster definitions
+casehub.workers.k8s.clusters.prod.context=prod-eks-context
+casehub.workers.k8s.clusters.staging.context=staging-context
+
+# Job targeting a named cluster
+casehub.workers.k8s.jobs.ml-training.cluster=prod
+casehub.workers.k8s.jobs.ml-training.image=ml-pipeline:latest
+casehub.workers.k8s.jobs.ml-training.namespace=ml-jobs
 ```
 
-Cross-repo dependency: casehub-pages#416 (callback support in scenario engine).
+Jobs without a `cluster` property use the default Quarkus-managed `KubernetesClient`. Partial cluster failure is tolerated -- the runtime enters RUNNING if at least one cluster is reachable. Jobs targeting unreachable clusters will fault at dispatch time.
 
 ### Fault Handling
 
@@ -296,32 +278,30 @@ Backoff strategies: `FIXED` (constant delay), `EXPONENTIAL` (baseDelay * 2^(atte
 
 Fault classification by worker type:
 
-| Condition | HTTP | MCP | GitHub Actions | Script | K8s | Scenario |
-|-----------|------|-----|----------------|--------|-----|----------|
-| 4xx (except 429) | Permanent | Permanent | Permanent | -- | -- | Permanent |
-| 429 with Retry-After | RetryAfter | RetryAfter | RetryAfter | -- | -- | RetryAfter |
-| 422 workflow-dispatch | -- | -- | RetryAfter(60s) | -- | -- | -- |
-| 422 repository-dispatch | -- | -- | Permanent | -- | -- | -- |
-| 404 with session | -- | Retryable (session expired) | -- | -- | -- | -- |
-| 404 without session | -- | Permanent | -- | -- | -- | -- |
-| `isError: true` | -- | Retryable | -- | -- | -- | -- |
-| JSON-RPC -32600/-32601/-32602/-32700 | -- | Permanent | -- | -- | -- | -- |
-| Timeout | Retryable | Retryable | -- | Permanent | -- | -- |
-| Non-zero exit | -- | -- | -- | Retryable | -- | -- |
-| Command not found | -- | -- | -- | Permanent | -- | -- |
-| OOMKilled | -- | -- | -- | -- | Permanent | -- |
-| ImagePullBackOff | -- | -- | -- | -- | Permanent | -- |
-| BackoffLimitExceeded | -- | -- | -- | -- | Permanent | -- |
-| DeadlineExceeded | -- | -- | -- | -- | Permanent | -- |
-| Eviction/Preemption | -- | -- | -- | -- | Retryable | -- |
-| API 403/404/422 | -- | -- | -- | -- | Permanent | -- |
-| API 409 conflict | -- | -- | -- | -- | Retryable | -- |
-| Script not found (404) | -- | -- | -- | -- | -- | Permanent |
-| Network/connection failure | -- | -- | -- | -- | -- | Retryable |
+| Condition | HTTP | MCP | GitHub Actions | Script | K8s |
+|-----------|------|-----|----------------|--------|-----|
+| 4xx (except 429) | Permanent | Permanent | Permanent | -- | -- |
+| 429 with Retry-After | RetryAfter | RetryAfter | RetryAfter | -- | -- |
+| 422 workflow-dispatch | -- | -- | RetryAfter(60s) | -- | -- |
+| 422 repository-dispatch | -- | -- | Permanent | -- | -- |
+| 404 with session | -- | Retryable (session expired) | -- | -- | -- |
+| 404 without session | -- | Permanent | -- | -- | -- |
+| `isError: true` | -- | Retryable | -- | -- | -- |
+| JSON-RPC -32600/-32601/-32602/-32700 | -- | Permanent | -- | -- | -- |
+| Timeout | Retryable | Retryable | -- | Permanent | -- |
+| Non-zero exit | -- | -- | -- | Retryable | -- |
+| Command not found | -- | -- | -- | Permanent | -- |
+| OOMKilled | -- | -- | -- | -- | Permanent |
+| ImagePullBackOff | -- | -- | -- | -- | Permanent |
+| BackoffLimitExceeded | -- | -- | -- | -- | Permanent |
+| DeadlineExceeded | -- | -- | -- | -- | Permanent |
+| Eviction/Preemption | -- | -- | -- | -- | Retryable |
+| API 403/404/422 | -- | -- | -- | -- | Permanent |
+| API 409 conflict | -- | -- | -- | -- | Retryable |
 
 ### Async Completion
 
-`AsyncWorkerCompletionRegistry` tracks pending asynchronous dispatches with TTL-based expiry. Used by HTTP (async mode), Camel (InOnly pattern), K8s, and Scenario.
+`AsyncWorkerCompletionRegistry` tracks pending asynchronous dispatches with TTL-based expiry. Used by HTTP (async mode), Camel (InOnly pattern), and K8s.
 
 - Registration returns a `PendingCompletion` record with generated `dispatchId` and `callbackToken`
 - `expireStale()` runs on a schedule (`casehub.workers.async.expiry-check-interval`, default 5m) and fires `CompletionExpiredEvent` for expired entries

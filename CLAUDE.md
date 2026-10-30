@@ -14,6 +14,20 @@ Integration-tier collection of CaseHub worker implementations. Each module provi
 
 **Spec:** `docs/specs/2026-06-08-casehub-workers-camel-design.md` — fully approved, 7 review cycles.
 
+## Platform Docs
+- [Platform Index](https://raw.githubusercontent.com/casehubio/parent/main/docs/INDEX.md) — discovery index (start here)
+- [Building Platform](https://raw.githubusercontent.com/casehubio/parent/main/docs/guides/building-platform.md) — platform contributor guide
+
+## Repo Guide
+
+This repo owns its own documentation, synced to parent via CI:
+- `docs/guides/consumer-guide.md` — for app builders: modules, APIs, quick start
+- `docs/guides/contributor-guide.md` — for platform builders: architecture, SPIs, internals
+
+Update the relevant guide in the same session when implementation changes modules, SPIs, or public APIs. Do not defer — drift compounds.
+
+Read `docs/guides/consumer-guide.md` for app-level work. Only read `docs/guides/contributor-guide.md` when modifying this repo's internals or extension points.
+
 ## Build Commands
 
 ```bash
@@ -144,17 +158,18 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 
 | Type | Purpose |
 |------|---------|
-| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata. Annotation constant: `BINDING_NAME_ANNOTATION` — annotation (not label) because `bindingName` is user-defined and may exceed 63-char label limit |
+| `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata, `CLUSTER_LABEL` for multi-cluster debugging. Annotation constant: `BINDING_NAME_ANNOTATION` — annotation (not label) because `bindingName` is user-defined and may exceed 63-char label limit |
 | `K8sWorkerEventBusAddresses.K8S_WORKER_FAULT` | Separate fault address from other workers |
-| `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
+| `ClusterDefinition` | Record — `name`, `context` (kubeconfig context name) |
+| `K8sClusterManager` | `@ApplicationScoped` — per-cluster `KubernetesClient` lifecycle. `initializeFromConfig()` reads `casehub.workers.k8s.clusters.<name>.context` and creates clients via `KubernetesClientBuilder`. `clientForJob(JobDefinition)` resolves cluster from definition, falls back to default CDI-injected client. `clientFor(String)` resolves by cluster name |
+| `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup`, `cluster` (nullable — null means default client) |
 | `CleanupPolicy` | `DELETE` (default) / `RETAIN` enum — eager delete + TTL safety net vs. manual cleanup |
-| `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier. `@PostConstruct` eager initialization from Config — eliminates race between engine recovery and worker initialization |
-| `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars. Adds `bindingName` as annotation when non-null |
+| `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier. `@PostConstruct` eager initialization from Config — eliminates race between engine recovery and worker initialization. Parses `cluster` from config |
+| `K8sJobBuilder` | Static utility — builds fabric8 `Job` from `JobDefinition` + dispatch context. Two paths: image-based (full spec from config fields) and template-based (classpath YAML + overlay). Enforces `restartPolicy: Never`, unique name (`casehub-{slug}-{8-char-hex}`), CaseHub labels + env vars. Adds `bindingName` as annotation when non-null. Adds `casehub.io/cluster` label when cluster is non-null |
 | `K8sJobOutputCapture` | Reads Pod logs after completion — lists Pods by `job-name` label, selects last Pod (handles `backoffLimit > 0`), bounded read at `maxOutputBytes`, JSON parsing (valid object → structured map; else → raw wrapper `{stdout, exitCode}`) |
-| `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — creates Job via `kubernetesClient.resource(job).create()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())`. Implements `schedulePersistedEvent()` for restart recovery, injects `CaseInstanceRepository` |
-| `K8sReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver |
-| `K8sWorkerRuntime` | `WorkerRuntime` implementation — validates K8s connectivity (`kubernetesClient.getApiVersion()`), starts per-namespace informers, FAULTED if no jobs configured or all informers failed |
-| `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard via `ConcurrentHashMap.newKeySet()`). Injects `CaseInstanceRepository`. Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
+| `K8sWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — resolves per-cluster client via `K8sClusterManager.clientForJob()`, registers in `AsyncWorkerCompletionRegistry`, validates input size against `maxInputBytes`. Execution model: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())`. Implements `schedulePersistedEvent()` for restart recovery, injects `CaseInstanceRepository` |
+| `K8sWorkerRuntime` | `WorkerRuntime` implementation — per-cluster connectivity check with partial-failure tolerance (RUNNING if at least one cluster reachable). Builds cluster-namespace map from `JobDefinition.cluster()`, FAULTED if no jobs configured or all clusters unreachable |
+| `K8sJobInformerManager` | Per-cluster informer lifecycle — `Map<String, SharedIndexInformer<Job>>` keyed by `"cluster:namespace"`. Per-cluster client captured in `ResourceEventHandler` closure and threaded through `processTerminal()`, `handleDelete()`, `findLastPod()`. Label selector: `app.kubernetes.io/managed-by=casehub`. `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard). Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
 | `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 
 ## workers-scenario Key Types
@@ -210,7 +225,8 @@ Update the relevant guide in the same session when implementation changes module
 - Script non-zero exit → `RuntimeException` (retryable). Command not found or working directory missing → `PermanentFaultException`.
 - Script stream draining: bounded read loop (8KB chunks, cap at `maxOutputBytes`, drain past cap to prevent SIGPIPE). Dedicated `ExecutorService` for stream draining — `@PostConstruct`/`@PreDestroy` lifecycle on execution manager.
 - K8s Job creation: `runSubscriptionOn(Infrastructure.getDefaultWorkerPool())` — fabric8 client API is blocking. Input size validated against `maxInputBytes` (default 256KB); etcd has ~1.5MB object size limit.
-- K8s completion model: watch-based via `SharedIndexInformer<Job>` per namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. `onAdd` handles reconnection (Jobs completed during watch disconnect); `onUpdate` handles terminal state; `onDelete` classifies TTL cleanup vs. external deletion.
+- K8s multi-cluster: `K8sClusterManager` manages per-cluster `KubernetesClient` instances (analogous to MCP's `McpSessionManager`). `JobDefinition.cluster()` is nullable — null means default CDI-injected client. Config: `casehub.workers.k8s.clusters.<name>.context=<kubeconfig-context>`. Jobs reference clusters via `casehub.workers.k8s.jobs.<name>.cluster=<cluster-name>`. Partial cluster failure tolerated — RUNNING if at least one cluster reachable.
+- K8s completion model: watch-based via `SharedIndexInformer<Job>` per (cluster, namespace). Informers keyed by `"cluster:namespace"` composite key, empty string for default cluster. Per-cluster client captured in `ResourceEventHandler` closure. Label selector: `app.kubernetes.io/managed-by=casehub`. `onAdd` handles reconnection (Jobs completed during watch disconnect); `onUpdate` handles terminal state; `onDelete` classifies TTL cleanup vs. external deletion.
 - K8s fault classification: `BackoffLimitExceeded` with `backoffLimit=0` (default) checks Pod reason; `backoffLimit>0` → permanent (K8s already retried). `DeadlineExceeded` → permanent (enriched with Pod waiting state if Pod never started). `OOMKilled`, `ImagePullBackOff`, `InvalidImageName`, `CreateContainerConfigError` → permanent. Pod eviction, preemption, node failure → retryable. API 403/404/422 → permanent; 409 conflict → retryable.
 - K8s cleanup: eager delete in `processTerminal()` if `cleanup != RETAIN`, plus `ttlSecondsAfterFinished` safety net (default 600s, minimum 300s).
 - K8s `backoffLimit` defaults to 0 — CaseHub's fault pipeline owns retry logic. With `backoffLimit=0` + `restartPolicy: Never`, any Pod failure surfaces immediately to CaseHub's fault handler.

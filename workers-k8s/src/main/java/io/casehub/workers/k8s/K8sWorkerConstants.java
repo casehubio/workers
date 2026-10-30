@@ -13,6 +13,8 @@ public final class K8sWorkerConstants {
     public static final String EVENT_LOG_ID_LABEL = "casehub.io/event-log-id";
     public static final String IDEMPOTENCY_LABEL = "casehub.io/idempotency";
     public static final String BINDING_NAME_ANNOTATION = "casehub.io/binding-name";
+    public static final String CLUSTER_LABEL           = "casehub.io/cluster";
+
 
     private K8sWorkerConstants() {}
 }

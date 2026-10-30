@@ -17,13 +17,13 @@ class JobDefinitionResolverTest {
     private static JobDefinition imageDef(String name, String namespace) {
         return new JobDefinition(name, namespace, "acme/" + name + ":latest",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     private static JobDefinition templateDef(String name, String namespace) {
         return new JobDefinition(name, namespace, null,
             List.of(), List.of(), "jobs/" + name + ".yaml", null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     @Test

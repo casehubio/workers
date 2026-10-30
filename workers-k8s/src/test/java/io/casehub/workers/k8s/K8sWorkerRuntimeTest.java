@@ -26,13 +26,15 @@ class K8sWorkerRuntimeTest {
         runtime = new K8sWorkerRuntime();
         runtime.resolver = resolver;
         runtime.informerManager = informerManager;
-        runtime.kubernetesClient = client;
+        K8sClusterManager clusterManager = new K8sClusterManager();
+        clusterManager.initialize(Map.of(), client);
+        runtime.clusterManager = clusterManager;
     }
 
     private static JobDefinition imageDef(String name, String namespace) {
         return new JobDefinition(name, namespace, "img:v1",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     @Test
@@ -50,7 +52,7 @@ class K8sWorkerRuntimeTest {
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities()).containsExactly("k8s:test");
-        verify(informerManager).start(Set.of("batch"));
+        verify(informerManager).start(Map.of("", Set.of("batch")));
     }
 
     @Test

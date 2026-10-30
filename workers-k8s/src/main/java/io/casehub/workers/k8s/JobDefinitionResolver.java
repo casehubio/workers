@@ -101,33 +101,34 @@ public class JobDefinitionResolver implements WorkerCapabilityResolver<JobDefini
     }
 
     private JobDefinition buildFromConfig(String name, Map<String, String> props) {
-        String image = props.get("image");
+        String image    = props.get("image");
         String template = props.get("template");
         if ((image == null || image.isBlank()) && (template == null || template.isBlank())) {
             throw new WorkerProvisioningException(
-                "K8s job '" + name + "' must have either 'image' or 'template' configured");
+                    "K8s job '" + name + "' must have either 'image' or 'template' configured");
         }
         String capTag = K8sWorkerConstants.TAG_PREFIX + name;
         if (capTag.length() > 63) {
             throw new WorkerProvisioningException(
-                "Capability tag '" + capTag + "' exceeds K8s 63-char label value limit");
+                    "Capability tag '" + capTag + "' exceeds K8s 63-char label value limit");
         }
-        String namespace = propOrDefault(props, "namespace", defaultNamespace);
-        int timeout = parseIntOrDefault(props.get("timeout-seconds"), defaultTimeoutSeconds);
-        int ttl = Math.max(300, parseIntOrDefault(props.get("ttl-after-finished"), defaultTtlAfterFinished));
-        int backoff = parseIntOrDefault(props.get("backoff-limit"), defaultBackoffLimit);
-        long maxOutput = parseLongOrDefault(props.get("max-output-bytes"), defaultMaxOutputBytes);
-        CleanupPolicy cleanup = parseCleanup(props.get("cleanup"), defaultCleanup);
-        List<String> command = parseList(props.get("command"));
-        List<String> args = parseList(props.get("args"));
-        Map<String, String> env = extractPrefixed(props, "environment.");
-        Map<String, String> labels = extractPrefixed(props, "labels.");
+        String              namespace = propOrDefault(props, "namespace", defaultNamespace);
+        int                 timeout   = parseIntOrDefault(props.get("timeout-seconds"), defaultTimeoutSeconds);
+        int                 ttl       = Math.max(300, parseIntOrDefault(props.get("ttl-after-finished"), defaultTtlAfterFinished));
+        int                 backoff   = parseIntOrDefault(props.get("backoff-limit"), defaultBackoffLimit);
+        long                maxOutput = parseLongOrDefault(props.get("max-output-bytes"), defaultMaxOutputBytes);
+        CleanupPolicy       cleanup   = parseCleanup(props.get("cleanup"), defaultCleanup);
+        List<String>        command   = parseList(props.get("command"));
+        List<String>        args      = parseList(props.get("args"));
+        Map<String, String> env       = extractPrefixed(props, "environment.");
+        Map<String, String> labels    = extractPrefixed(props, "labels.");
+        String              cluster   = props.get("cluster");
 
         return new JobDefinition(name, namespace, image, command, args, template,
-            props.get("cpu-request"), props.get("cpu-limit"),
-            props.get("memory-request"), props.get("memory-limit"),
-            timeout, ttl, backoff, maxOutput,
-            props.get("service-account"), labels, env, cleanup);
+                                 props.get("cpu-request"), props.get("cpu-limit"),
+                                 props.get("memory-request"), props.get("memory-limit"),
+                                 timeout, ttl, backoff, maxOutput,
+                                 props.get("service-account"), labels, env, cleanup, cluster);
     }
 
     private Map<String, Map<String, String>> loadConfigJobs() {

@@ -38,7 +38,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
     @Inject JobDefinitionResolver resolver;
     @Inject AsyncWorkerCompletionRegistry registry;
     @Inject WorkerFaultPublisher faultPublisher;
-    @Inject KubernetesClient kubernetesClient;
+    @Inject K8sClusterManager clusterManager;
     @Inject K8sJobInformerManager informerManager;
     @Inject CaseInstanceRepository caseInstanceRepository;
     @Inject ObjectMapper objectMapper;
@@ -112,7 +112,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                                               instance.getUuid().toString(), instance.tenancyId,
                                               capability.name(), ctx.idempotency(), inputDataJson,
                                               worker.name(), eventLogId, ctx.bindingName());
-                kubernetesClient.resource(job).create();
+                clusterManager.clientForJob(definition).resource(job).create();
             } catch (KubernetesClientException e) {
                 registry.complete(pending.dispatchId());
                 throw classifyApiServerError(e);
@@ -180,8 +180,9 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                 K8sWorkerConstants.CAPABILITY_LABEL, capabilityName,
                 K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
 
+        KubernetesClient client = clusterManager.clientForJob(definition);
         for (String ns : resolver.namespaces()) {
-            var existing = kubernetesClient.resources(Job.class)
+            var existing = client.resources(Job.class)
                                            .inNamespace(ns).withLabels(labelSelector).list();
             if (!existing.getItems().isEmpty()) {
                 LOG.infof("schedulePersistedEvent: existing Job found for case %s capability %s — informer handles it",

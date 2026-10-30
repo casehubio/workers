@@ -1,5 +1,7 @@
 package io.casehub.workers.k8s;
 
+import io.casehub.engine.common.internal.model.CaseInstance;
+import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.casehub.worker.api.Capability;
 import io.casehub.worker.api.Worker;
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
@@ -8,8 +10,6 @@ import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
-import io.casehub.engine.common.internal.model.CaseInstance;
-import io.casehub.engine.common.spi.CaseInstanceRepository;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodList;
@@ -38,7 +38,7 @@ public class K8sJobInformerManager {
 
     private static final Logger LOG = Logger.getLogger(K8sJobInformerManager.class);
 
-    @Inject KubernetesClient kubernetesClient;
+    @Inject K8sClusterManager clusterManager;
     @Inject AsyncWorkerCompletionRegistry registry;
     @Inject WorkflowCompletionPublisher completionPublisher;
     @Inject WorkerFaultPublisher faultPublisher;
@@ -49,33 +49,39 @@ public class K8sJobInformerManager {
     private final Set<String> failedNamespaces = ConcurrentHashMap.newKeySet();
     private final Set<String> recoveredDispatchIds = ConcurrentHashMap.newKeySet();
 
-    void start(Set<String> namespaces) {
-        for (String ns : namespaces) {
-            try {
-                SharedIndexInformer<Job> informer = kubernetesClient.resources(Job.class)
-                    .inNamespace(ns)
-                    .withLabel(K8sWorkerConstants.MANAGED_BY_LABEL, K8sWorkerConstants.MANAGED_BY_VALUE)
-                    .inform(new ResourceEventHandler<>() {
-                        @Override
-                        public void onAdd(Job job) {
-                            handleTerminalEvent(job);
-                        }
+    void start(Map<String, Set<String>> clusterNamespaces) {
+        for (var entry : clusterNamespaces.entrySet()) {
+            String           clusterName = entry.getKey();
+            KubernetesClient client      = clusterManager.clientFor(clusterName);
+            for (String ns : entry.getValue()) {
+                String key = clusterName.isEmpty() ? ns : clusterName + ":" + ns;
+                try {
+                    SharedIndexInformer<Job> informer = client.resources(Job.class)
+                                                              .inNamespace(ns)
+                                                              .withLabel(K8sWorkerConstants.MANAGED_BY_LABEL, K8sWorkerConstants.MANAGED_BY_VALUE)
+                                                              .inform(new ResourceEventHandler<>() {
+                                                                  @Override
+                                                                  public void onAdd(Job job) {
+                                                                      handleTerminalEvent(job, client);
+                                                                  }
 
-                        @Override
-                        public void onUpdate(Job oldJob, Job newJob) {
-                            handleTerminalEvent(newJob);
-                        }
+                                                                  @Override
+                                                                  public void onUpdate(Job oldJob, Job newJob) {
+                                                                      handleTerminalEvent(newJob, client);
+                                                                  }
 
-                        @Override
-                        public void onDelete(Job job, boolean deletedFinalStateUnknown) {
-                            handleDelete(job);
-                        }
-                    });
-                informers.put(ns, informer);
-                LOG.infof("Started informer for namespace '%s'", ns);
-            } catch (Exception e) {
-                LOG.warnf("Failed to start informer for namespace '%s': %s", ns, e.getMessage());
-                failedNamespaces.add(ns);
+                                                                  @Override
+                                                                  public void onDelete(Job job, boolean deletedFinalStateUnknown) {
+                                                                      handleDelete(job, client);
+                                                                  }
+                                                              });
+                    informers.put(key, informer);
+                    LOG.infof("Started informer for %s namespace '%s'",
+                              clusterName.isEmpty() ? "default cluster" : "cluster '" + clusterName + "'", ns);
+                } catch (Exception e) {
+                    LOG.warnf("Failed to start informer for namespace '%s': %s", key, e.getMessage());
+                    failedNamespaces.add(key);
+                }
             }
         }
     }
@@ -99,63 +105,63 @@ public class K8sJobInformerManager {
         return !informers.isEmpty();
     }
 
-    private void handleTerminalEvent(Job job) {
-        if (!isTerminal(job)) return;
+    private void handleTerminalEvent(Job job, KubernetesClient client) {
+        if (!isTerminal(job)) {return;}
         String dispatchId = extractDispatchId(job);
-        if (dispatchId == null) return;
+        if (dispatchId == null) {return;}
 
         Uni.createFrom().item(job)
-            .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
-            .subscribe().with(
-                j -> processTerminal(j, dispatchId),
-                err -> LOG.errorf(err, "Failed processing terminal Job for dispatch %s", dispatchId));
+           .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
+           .subscribe().with(
+                   j -> processTerminal(j, dispatchId, client),
+                   err -> LOG.errorf(err, "Failed processing terminal Job for dispatch %s", dispatchId));
     }
 
-    void handleDelete(Job job) {
+    void handleDelete(Job job, KubernetesClient client) {
         String dispatchId = extractDispatchId(job);
-        if (dispatchId == null) return;
+        if (dispatchId == null) {return;}
 
         if (isTerminal(job)) {
             Uni.createFrom().item(job)
-                .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
-                .subscribe().with(
-                    j -> processTerminal(j, dispatchId),
-                    err -> LOG.errorf(err, "Failed processing deleted terminal Job for dispatch %s", dispatchId));
+               .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
+               .subscribe().with(
+                       j -> processTerminal(j, dispatchId, client),
+                       err -> LOG.errorf(err, "Failed processing deleted terminal Job for dispatch %s", dispatchId));
             return;
         }
 
         Optional<PendingCompletion> maybePending = registry.complete(dispatchId);
-        if (maybePending.isEmpty()) return;
+        if (maybePending.isEmpty()) {return;}
         faultPublisher.fault(maybePending.get(), new RuntimeException("Job deleted externally"));
     }
 
-    void processTerminal(Job job, String dispatchId) {
+    void processTerminal(Job job, String dispatchId, KubernetesClient client) {
         Optional<PendingCompletion> maybePending = registry.complete(dispatchId);
 
         if (maybePending.isEmpty()) {
             maybePending = recoverFromJob(job, dispatchId);
         }
 
-        if (maybePending.isEmpty()) return;
+        if (maybePending.isEmpty()) {return;}
 
         PendingCompletion pending = maybePending.get();
-        String ns = job.getMetadata().getNamespace();
-        String jobName = job.getMetadata().getName();
+        String            ns      = job.getMetadata().getNamespace();
+        String            jobName = job.getMetadata().getName();
 
         if (isSucceeded(job)) {
-            String maxOutputStr = pending.provisionerMeta().getOrDefault("maxOutputBytes", "1048576");
-            long maxOutput = Long.parseLong(maxOutputStr);
-            Map<String, Object> output = K8sJobOutputCapture.capture(kubernetesClient, ns, jobName, maxOutput);
+            String              maxOutputStr = pending.provisionerMeta().getOrDefault("maxOutputBytes", "1048576");
+            long                maxOutput    = Long.parseLong(maxOutputStr);
+            Map<String, Object> output       = K8sJobOutputCapture.capture(client, ns, jobName, maxOutput);
             completionPublisher.complete(pending.correlationContext(), output);
         } else {
-            Throwable fault = classifyJobFailure(job, ns, jobName);
+            Throwable fault = classifyJobFailure(job, ns, jobName, client);
             faultPublisher.fault(pending, fault);
         }
 
         String cleanupStr = pending.provisionerMeta().getOrDefault("cleanup", "DELETE");
         if (!"RETAIN".equals(cleanupStr)) {
             try {
-                kubernetesClient.resource(job).delete();
+                client.resource(job).delete();
             } catch (Exception e) {
                 LOG.warnf("Failed to delete Job %s/%s: %s", ns, jobName, e.getMessage());
             }
@@ -233,23 +239,23 @@ public class K8sJobInformerManager {
             Instant.now(), Instant.MAX, provisionerMeta));
     }
 
-    Throwable classifyJobFailure(Job job, String namespace, String jobName) {
-        String reason = extractFailureReason(job);
-        int backoffLimit = job.getSpec().getBackoffLimit() != null ? job.getSpec().getBackoffLimit() : 0;
+    Throwable classifyJobFailure(Job job, String namespace, String jobName, KubernetesClient client) {
+        String reason       = extractFailureReason(job);
+        int    backoffLimit = job.getSpec().getBackoffLimit() != null ? job.getSpec().getBackoffLimit() : 0;
 
         if ("DeadlineExceeded".equals(reason)) {
-            String enrichment = enrichDeadlineExceeded(namespace, jobName);
+            String enrichment = enrichDeadlineExceeded(namespace, jobName, client);
             return new PermanentFaultException(0,
-                "DeadlineExceeded" + (enrichment != null ? " — " + enrichment :
-                    " — Job ran past activeDeadlineSeconds"));
+                                               "DeadlineExceeded" + (enrichment != null ? " — " + enrichment :
+                                                                     " — Job ran past activeDeadlineSeconds"));
         }
 
         if ("BackoffLimitExceeded".equals(reason)) {
             if (backoffLimit > 0) {
                 return new PermanentFaultException(0,
-                    "BackoffLimitExceeded after " + backoffLimit + " K8s retries");
+                                                   "BackoffLimitExceeded after " + backoffLimit + " K8s retries");
             }
-            String podReason = extractPodFailureReason(namespace, jobName);
+            String podReason = extractPodFailureReason(namespace, jobName, client);
             if (podReason != null) {
                 return classifyPodReason(podReason, namespace, jobName);
             }
@@ -273,37 +279,37 @@ public class K8sJobInformerManager {
         };
     }
 
-    private Pod findLastPod(String namespace, String jobName) {
+    private Pod findLastPod(String namespace, String jobName, KubernetesClient client) {
         try {
-            PodList pods = kubernetesClient.pods().inNamespace(namespace)
-                .withLabel("job-name", jobName).list();
-            if (pods.getItems().isEmpty()) return null;
+            PodList pods = client.pods().inNamespace(namespace)
+                                 .withLabel("job-name", jobName).list();
+            if (pods.getItems().isEmpty()) {return null;}
             return pods.getItems().stream()
-                .max(Comparator.comparing(p -> p.getMetadata().getCreationTimestamp()))
-                .orElse(null);
+                       .max(Comparator.comparing(p -> p.getMetadata().getCreationTimestamp()))
+                       .orElse(null);
         } catch (Exception e) {
             LOG.debugf("Could not find Pod for %s/%s: %s", namespace, jobName, e.getMessage());
             return null;
         }
     }
 
-    private String enrichDeadlineExceeded(String namespace, String jobName) {
-        Pod lastPod = findLastPod(namespace, jobName);
-        if (lastPod == null) return null;
+    private String enrichDeadlineExceeded(String namespace, String jobName, KubernetesClient client) {
+        Pod lastPod = findLastPod(namespace, jobName, client);
+        if (lastPod == null) {return null;}
         List<ContainerStatus> statuses = lastPod.getStatus().getContainerStatuses();
         if (statuses != null && !statuses.isEmpty()) {
             var waiting = statuses.get(0).getState().getWaiting();
             if (waiting != null && waiting.getReason() != null) {
                 return "Pod never started: " + waiting.getReason()
-                    + (waiting.getMessage() != null ? " (" + waiting.getMessage() + ")" : "");
+                       + (waiting.getMessage() != null ? " (" + waiting.getMessage() + ")" : "");
             }
         }
         return null;
     }
 
-    private String extractPodFailureReason(String namespace, String jobName) {
-        Pod lastPod = findLastPod(namespace, jobName);
-        if (lastPod == null) return null;
+    private String extractPodFailureReason(String namespace, String jobName, KubernetesClient client) {
+        Pod lastPod = findLastPod(namespace, jobName, client);
+        if (lastPod == null) {return null;}
         List<ContainerStatus> statuses = lastPod.getStatus().getContainerStatuses();
         if (statuses != null && !statuses.isEmpty()) {
             var terminated = statuses.get(0).getState().getTerminated();

@@ -15,7 +15,7 @@ class K8sJobBuilderTest {
             List.of("python"), List.of("run.py"), null,
             "500m", "2", "512Mi", "4Gi",
             3600, 600, 0, 1_048_576, "sa-batch",
-            Map.of("team", "data"), Map.of("APP_MODE", "prod"), CleanupPolicy.DELETE);
+            Map.of("team", "data"), Map.of("APP_MODE", "prod"), CleanupPolicy.DELETE, null);
     }
 
     @Test
@@ -95,7 +95,7 @@ class K8sJobBuilderTest {
     void build_slugDerivation_sanitizesSpecialChars() {
         JobDefinition def = new JobDefinition("My Report Gen!", "ns", "img:v1",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
 
         Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:My Report Gen!", "i1", "{}", "worker-1", 1L, null);
 
@@ -109,7 +109,7 @@ class K8sJobBuilderTest {
         String longName = "a".repeat(60);
         JobDefinition def = new JobDefinition(longName, "ns", "img:v1",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
 
         Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:" + longName, "i1", "{}", "worker-1", 1L, null);
 
@@ -120,7 +120,7 @@ class K8sJobBuilderTest {
     void build_nullResourceLimits_omitsResources() {
         JobDefinition def = new JobDefinition("simple", "ns", "img:v1",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
 
         Job job = K8sJobBuilder.build(def, "d1", "c1", "t1", "k8s:simple", "i1", "{}", "worker-1", 1L, null);
 
@@ -146,7 +146,7 @@ class K8sJobBuilderTest {
         return new JobDefinition(name, "batch", null, List.of(), List.of(),
             "templates/" + name + ".yaml",
             null, null, null, null, 3600, 600, 0, 1_048_576,
-            null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     @Test

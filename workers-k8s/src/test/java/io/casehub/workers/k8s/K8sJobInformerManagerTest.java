@@ -82,7 +82,9 @@ class K8sJobInformerManagerTest {
         manager.registry = registry;
         manager.completionPublisher = completionPublisher;
         manager.faultPublisher = faultPublisher;
-        manager.kubernetesClient = client;
+        K8sClusterManager clusterManager = new K8sClusterManager();
+        clusterManager.initialize(Map.of(), client);
+        manager.clusterManager = clusterManager;
         manager.caseInstanceRepository = caseInstanceRepository;
         manager.resolver = resolver;
     }
@@ -94,7 +96,7 @@ class K8sJobInformerManagerTest {
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         verify(completionPublisher).complete(eq(pending.correlationContext()), any());
     }
@@ -107,7 +109,7 @@ class K8sJobInformerManagerTest {
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(pending), captor.capture());
@@ -120,7 +122,7 @@ class K8sJobInformerManagerTest {
         Job job = buildJob("batch", "casehub-test-abc", "dispatch-1", "Complete");
         when(registry.complete("dispatch-1")).thenReturn(Optional.empty());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         verifyNoInteractions(completionPublisher, faultPublisher);
     }
@@ -132,7 +134,7 @@ class K8sJobInformerManagerTest {
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         verify(client.resource(job)).delete();
     }
@@ -144,7 +146,7 @@ class K8sJobInformerManagerTest {
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         verify(client, never()).resource(any(Job.class));
     }
@@ -153,7 +155,7 @@ class K8sJobInformerManagerTest {
     void classifyJobFailure_backoffLimitExceeded_backoffZero_retryable() {
         Job job = buildFailedJob("BackoffLimitExceeded", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isNotInstanceOf(PermanentFaultException.class);
     }
@@ -162,7 +164,7 @@ class K8sJobInformerManagerTest {
     void classifyJobFailure_backoffLimitExceeded_backoffPositive_permanent() {
         Job job = buildFailedJob("BackoffLimitExceeded", 3);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
     }
@@ -171,7 +173,7 @@ class K8sJobInformerManagerTest {
     void classifyJobFailure_deadlineExceeded_permanent() {
         Job job = buildFailedJob("DeadlineExceeded", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("DeadlineExceeded");
@@ -220,7 +222,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_OOMKilled_permanent() {
         Job job = buildFailedJobWithPodReason("OOMKilled", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("OOMKilled");
@@ -230,7 +232,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_ImagePullBackOff_permanent() {
         Job job = buildFailedJobWithPodReason("ImagePullBackOff", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("ImagePullBackOff");
@@ -240,7 +242,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_ErrImagePull_permanent() {
         Job job = buildFailedJobWithPodReason("ErrImagePull", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("ErrImagePull");
@@ -250,7 +252,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_InvalidImageName_permanent() {
         Job job = buildFailedJobWithPodReason("InvalidImageName", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("InvalidImageName");
@@ -260,7 +262,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_CreateContainerConfigError_permanent() {
         Job job = buildFailedJobWithPodReason("CreateContainerConfigError", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("CreateContainerConfigError");
@@ -270,7 +272,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_Evicted_retryable() {
         Job job = buildFailedJobWithPodReason("Evicted", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isNotInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("Evicted");
@@ -280,7 +282,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_Preempting_retryable() {
         Job job = buildFailedJobWithPodReason("Preempting", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isNotInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("Preempting");
@@ -290,7 +292,7 @@ class K8sJobInformerManagerTest {
     void classifyPodReason_unknown_retryable() {
         Job job = buildFailedJobWithPodReason("UnknownReason", 0);
 
-        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1");
+        Throwable fault = manager.classifyJobFailure(job, "batch", "job-1", client);
 
         assertThat(fault).isNotInstanceOf(PermanentFaultException.class);
         assertThat(fault.getMessage()).contains("UnknownReason");
@@ -303,7 +305,7 @@ class K8sJobInformerManagerTest {
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.handleDelete(job);
+        manager.handleDelete(job, client);
 
         verify(completionPublisher, timeout(1000)).complete(eq(pending.correlationContext()), any());
     }
@@ -321,7 +323,7 @@ class K8sJobInformerManagerTest {
         PendingCompletion pending = buildPending("dispatch-1", "DELETE");
         when(registry.complete("dispatch-1")).thenReturn(Optional.of(pending));
 
-        manager.handleDelete(job);
+        manager.handleDelete(job, client);
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(eq(pending), captor.capture());
@@ -341,7 +343,7 @@ class K8sJobInformerManagerTest {
 
         when(registry.complete("dispatch-1")).thenReturn(Optional.empty());
 
-        manager.handleDelete(job);
+        manager.handleDelete(job, client);
 
         verifyNoInteractions(faultPublisher);
     }
@@ -458,7 +460,7 @@ class K8sJobInformerManagerTest {
     private static JobDefinition imageDef(String name) {
         return new JobDefinition(name, "batch", "acme/" + name + ":latest",
             List.of(), List.of(), null, null, null, null, null,
-            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE);
+            3600, 600, 0, 1_048_576, null, Map.of(), Map.of(), CleanupPolicy.DELETE, null);
     }
 
     // --- Recovery tests ---
@@ -472,7 +474,7 @@ class K8sJobInformerManagerTest {
             .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-1");
+        manager.processTerminal(job, "dispatch-1", client);
 
         verify(completionPublisher).complete(any(WorkerCorrelationContext.class), any());
     }
@@ -482,7 +484,7 @@ class K8sJobInformerManagerTest {
         Job job = buildJob("batch", "casehub-test-abc", "dispatch-2", "Complete");
         when(registry.complete("dispatch-2")).thenReturn(Optional.empty());
 
-        manager.processTerminal(job, "dispatch-2");
+        manager.processTerminal(job, "dispatch-2", client);
 
         verifyNoInteractions(completionPublisher, faultPublisher);
     }
@@ -496,8 +498,8 @@ class K8sJobInformerManagerTest {
             .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-3");
-        manager.processTerminal(job, "dispatch-3");
+        manager.processTerminal(job, "dispatch-3", client);
+        manager.processTerminal(job, "dispatch-3", client);
 
         verify(completionPublisher, times(1)).complete(any(), any());
     }
@@ -512,7 +514,7 @@ class K8sJobInformerManagerTest {
             .thenReturn(Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
-        manager.processTerminal(job, "dispatch-4");
+        manager.processTerminal(job, "dispatch-4", client);
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
         verify(faultPublisher).fault(any(PendingCompletion.class), captor.capture());
@@ -527,7 +529,7 @@ class K8sJobInformerManagerTest {
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
             .thenReturn(Optional.empty());
 
-        manager.processTerminal(job, "dispatch-5");
+        manager.processTerminal(job, "dispatch-5", client);
 
         verifyNoInteractions(completionPublisher, faultPublisher);
     }

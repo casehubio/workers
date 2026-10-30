@@ -196,6 +196,9 @@ public final class K8sJobBuilder {
         labels.put(K8sWorkerConstants.WORKER_NAME_LABEL, workerName);
         labels.put(K8sWorkerConstants.EVENT_LOG_ID_LABEL, String.valueOf(eventLogId));
         labels.put(K8sWorkerConstants.IDEMPOTENCY_LABEL, idempotency);
+        if (def.cluster() != null && !def.cluster().isBlank()) {
+            labels.put(K8sWorkerConstants.CLUSTER_LABEL, def.cluster());
+        }
         return labels;
     }
 

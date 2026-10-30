@@ -19,7 +19,7 @@ Every worker module follows a consistent four-class pattern:
 | `{Type}WorkerExecutionManager` | Implements `WorkerExecutionManager` with `@WorkerBackend @Priority(10)`. Dispatches work -- serializes input, sends to target, handles response, publishes completion or fault. |
 | `{Type}WorkerFaultEventHandler` | `@ConsumeEvent(blocking = true)` on module-specific fault address. 5-line stub that delegates to `WorkerFaultHandler`. |
 
-The K8s module adds additional types beyond this pattern: `K8sJobBuilder` (Job construction), `K8sJobInformerManager` (watch-based completion, restart recovery), `K8sJobOutputCapture` (Pod log capture), `JobDefinition` (config record), `CleanupPolicy` (enum).
+The K8s module adds additional types beyond this pattern: `K8sJobBuilder` (Job construction), `K8sJobInformerManager` (watch-based completion, restart recovery), `K8sJobOutputCapture` (Pod log capture), `JobDefinition` (config record), `CleanupPolicy` (enum), `K8sClusterManager` (per-cluster `KubernetesClient` lifecycle), `ClusterDefinition` (cluster config record).
 
 ### Fault Pipeline Architecture
 
@@ -44,7 +44,7 @@ The pipeline consists of:
 - `WorkerCompletionExpiryObserver` -- `@ObservesAsync CompletionExpiredEvent`. Fired by `AsyncWorkerCompletionRegistry.expireStale()` when a pending completion exceeds its TTL. Routes to fault publisher with `"Async timeout"` message.
 - `WorkerFaultCallbackObserver` -- `@ObservesAsync FaultCallbackEvent`. Fired by `WorkerCallbackResource` when an external callback reports `faulted=true`. Routes to fault publisher.
 
-Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `K8S_WORKER_FAULT`, `SCENARIO_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` -- Quartz listens on the latter and would double-process.
+Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `K8S_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` -- Quartz listens on the latter and would double-process.
 
 ### Completion Path
 
@@ -59,7 +59,6 @@ Three-tier resolution order: Tier 1 (SPI beans) > Tier 2 (config) > Tier 3 (Endp
 Path conventions:
 - HTTP uses `Path.of("http", capabilityTag)`, accepts `EndpointProtocol.HTTP` only
 - MCP uses `Path.of("mcp", serverName)`, accepts `EndpointProtocol.MCP` only
-- Scenario uses `Path.of("scenario", name)`, accepts `EndpointProtocol.SCENARIO` only
 
 `WorkerCapabilityResolver<T>` interface:
 ```java
@@ -73,11 +72,11 @@ public interface WorkerCapabilityResolver<T> {
 }
 ```
 
-HTTP, MCP, and Scenario resolvers override `canResolve()` to also check EndpointRegistry. Camel uses SPI/Config/Convention tiers only (no EndpointRegistry).
+HTTP and MCP resolvers override `canResolve()` to also check EndpointRegistry. Camel uses SPI/Config/Convention tiers only (no EndpointRegistry).
 
 ### BindingName Correlation
 
-`bindingName` propagation from casehub-engine through worker dispatch enables tracing which YAML binding triggered a worker execution. `WorkerCorrelationContext` carries `bindingName` alongside `caseId`, `idempotency`, and `tenancyId`. All 7 worker modules implement both the 5-arg `submit()` (delegates with `null`) and 6-arg `submit(bindingName)` overload.
+`bindingName` propagation from casehub-engine through worker dispatch enables tracing which YAML binding triggered a worker execution. `WorkerCorrelationContext` carries `bindingName` alongside `caseId`, `idempotency`, and `tenancyId`. All 6 worker modules implement both the 5-arg `submit()` (delegates with `null`) and 6-arg `submit(bindingName)` overload.
 
 `bindingName` flows through:
 - `WorkerCorrelationContext` -> dispatch headers/env vars
@@ -245,15 +244,17 @@ Key implementation details:
 
 | Type | Purpose |
 |------|---------|
-| `K8sWorkerRuntime` | `WorkerRuntime` impl. Validates cluster connectivity, starts informers per namespace. FAULTED if no configs, cluster unreachable, or all informers fail |
+| `K8sWorkerRuntime` | `WorkerRuntime` impl. Per-cluster connectivity check, partial-failure tolerance (RUNNING if at least one cluster reachable). Builds cluster-namespace map from `JobDefinition.cluster()` |
+| `K8sClusterManager` | Per-cluster `KubernetesClient` lifecycle. `clientForJob(JobDefinition)` resolves cluster from definition; `clientFor(String)` resolves by name. Default client fallback for jobs without a cluster |
+| `ClusterDefinition` | Record: `name`, `context` (kubeconfig context name) |
 | `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>`. Config-driven: `casehub.workers.k8s.jobs.{name}.*`. Tag prefix: `k8s:`. Capability tag max 63 chars (K8s label limit). Eager init via `@PostConstruct` |
-| `K8sWorkerExecutionManager` | `WorkerExecutionManager` with `@WorkerBackend`. Validates input size, registers `PendingCompletion`, builds Job, creates via `KubernetesClient`. Implements `schedulePersistedEvent()` for restart recovery |
-| `K8sJobBuilder` | Static utility. Two modes: `buildFromImage()` (constructs Job from scratch) and `buildFromTemplate()` (loads classpath YAML, overlays CaseHub fields). Template overlay: name, namespace, labels (merge, CaseHub wins), backoffLimit, activeDeadlineSeconds, ttlSecondsAfterFinished, restartPolicy (always Never), first container env vars (append) |
-| `K8sJobInformerManager` | `SharedIndexInformer<Job>` per namespace. Terminal event handling via `processTerminal()`. Restart recovery via `recoverFromJob()`. Delete handling: terminal Jobs get processed; non-terminal deletions fault. `classifyJobFailure()` with Pod-level enrichment |
+| `K8sWorkerExecutionManager` | `WorkerExecutionManager` with `@WorkerBackend`. Resolves per-cluster client via `K8sClusterManager.clientForJob()`. Implements `schedulePersistedEvent()` for restart recovery |
+| `K8sJobBuilder` | Static utility. Two modes: `buildFromImage()` (constructs Job from scratch) and `buildFromTemplate()` (loads classpath YAML, overlays CaseHub fields). Adds `casehub.io/cluster` label when cluster is non-null |
+| `K8sJobInformerManager` | `SharedIndexInformer<Job>` per (cluster, namespace). Per-cluster client captured in informer handler closure and threaded through `processTerminal()`, `handleDelete()`, `findLastPod()`. Restart recovery via `recoverFromJob()` |
 | `K8sJobOutputCapture` | Captures Pod logs from last Pod by creation timestamp. JSON object parsing with `{stdout, exitCode}` fallback. Bounded by `maxOutputBytes` |
-| `JobDefinition` | Record: `name`, `namespace`, `image`, `command`, `args`, `template`, resource requests/limits, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
+| `JobDefinition` | Record: `name`, `namespace`, `image`, `command`, `args`, `template`, resource requests/limits, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup`, `cluster` |
 | `CleanupPolicy` | Enum: `DELETE`, `RETAIN` |
-| `K8sWorkerConstants` | `WORKER_TYPE = "k8s"`, `TAG_PREFIX = "k8s:"`, label key constants, annotation key constant |
+| `K8sWorkerConstants` | `WORKER_TYPE = "k8s"`, `TAG_PREFIX = "k8s:"`, label key constants (including `CLUSTER_LABEL`), annotation key constant |
 | `K8sWorkerEventBusAddresses` | `K8S_WORKER_FAULT` address constant |
 | `K8sWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
@@ -269,6 +270,7 @@ Key implementation details:
 - Input size validated against `maxInputBytes` config (default 256KB) before Job creation
 - Informer events: `onAdd` handles reconnection (processes terminal Jobs seen during initial list). `onUpdate` processes terminal state transitions. `onDelete` of non-terminal Jobs faults as "deleted externally"
 - All informer event callbacks dispatch to `Infrastructure.getDefaultWorkerPool()` via `Uni.runSubscriptionOn()` to avoid blocking the informer thread
+- Multi-cluster: `K8sClusterManager` manages per-cluster `KubernetesClient` instances (analogous to MCP's `McpSessionManager`). `JobDefinition.cluster()` is nullable -- null means default CDI-injected client. Informers keyed by `"cluster:namespace"` composite key, with empty string for default cluster. Per-cluster client captured in `ResourceEventHandler` closure and threaded through all follow-up operations
 
 ### workers-testing
 
