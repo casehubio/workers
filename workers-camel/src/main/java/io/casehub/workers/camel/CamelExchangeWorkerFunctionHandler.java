@@ -4,7 +4,9 @@ import io.casehub.api.model.WorkerContext;
 import io.casehub.engine.common.internal.executor.ExecutionMetadata;
 import io.casehub.engine.common.internal.executor.HandlerResult;
 import io.casehub.engine.common.internal.executor.WorkerFunctionHandler;
+import io.casehub.worker.api.Capability;
 import io.casehub.worker.api.Exchange;
+import io.casehub.worker.api.Worker;
 import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -31,13 +33,13 @@ public class CamelExchangeWorkerFunctionHandler implements WorkerFunctionHandler
     @Override
     @SuppressWarnings("unchecked")
     public HandlerResult execute(
-            WorkerFunction<?, ?> function,
+            Worker worker,
+            Capability capability,
             Object inputData,
             WorkerContext context,
-            int timeoutMs,
             ExecutionMetadata metadata) {
 
-        CamelExchangeWorkerFunction<?, ?> camelFn = (CamelExchangeWorkerFunction<?, ?>) function;
+        CamelExchangeWorkerFunction<?, ?> camelFn = (CamelExchangeWorkerFunction<?, ?>) worker.function();
         Exchange<?> inputExchange = (Exchange<?>) inputData;
 
         org.apache.camel.Exchange camelExchange = producerTemplate.getCamelContext()
