@@ -1,9 +1,12 @@
 package io.casehub.workers.script;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
+import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
@@ -41,166 +44,136 @@ class ScriptWorkerExecutionManagerTest {
         manager.shutdown();
     }
 
+    private WorkerCorrelationContext testCtx(CaseInstance instance, Worker worker) {
+        return new WorkerCorrelationContext(instance, worker, "test-idempotency", instance.tenancyId, null);
+    }
+
+    // --- executeProcess tests: call directly so exceptions surface in surefire ---
+
     @Test
-    void submit_jsonObjectStdout_parsedAsStructuredOutput() {
-        resolver.initialize(Map.of(
-            "json-script", new ScriptDefinition("json-script", "/bin/sh",
-                List.of("-c", "echo '{\"result\":\"ok\"}'"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_jsonObjectStdout_parsedAsStructuredOutput() {
+        ScriptDefinition def = new ScriptDefinition("json-script", "/bin/sh",
+            List.of("-c", "echo '{\"result\":\"ok\"}'"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:json-script"),
-            WorkerTestSupport.testCapability("script:json-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:json-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:json-script"));
 
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(completionPublisher).complete(any(), captor.capture());
-        assertThat(captor.getValue()).containsEntry("result", "ok");
+        Map<String, Object> output = manager.executeProcess(def, Map.of(), ctx, capability);
+
+        assertThat(output).containsEntry("result", "ok");
     }
 
     @Test
-    void submit_nonJsonStdout_wrappedAsRaw() {
-        resolver.initialize(Map.of(
-            "text-script", new ScriptDefinition("text-script", "/bin/sh",
-                List.of("-c", "echo hello world"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_nonJsonStdout_wrappedAsRaw() {
+        ScriptDefinition def = new ScriptDefinition("text-script", "/bin/sh",
+            List.of("-c", "echo hello world"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:text-script"),
-            WorkerTestSupport.testCapability("script:text-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:text-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:text-script"));
 
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(completionPublisher).complete(any(), captor.capture());
-        Map<String, Object> output = captor.getValue();
+        Map<String, Object> output = manager.executeProcess(def, Map.of(), ctx, capability);
+
         assertThat(output.get("stdout").toString()).contains("hello world");
         assertThat(output).containsKey("stderr");
         assertThat(output).containsEntry("exitCode", 0);
     }
 
     @Test
-    void submit_jsonArrayStdout_fallsThroughToRawWrapper() {
-        resolver.initialize(Map.of(
-            "array-script", new ScriptDefinition("array-script", "/bin/sh",
-                List.of("-c", "echo '[1,2,3]'"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_jsonArrayStdout_fallsThroughToRawWrapper() {
+        ScriptDefinition def = new ScriptDefinition("array-script", "/bin/sh",
+            List.of("-c", "echo '[1,2,3]'"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:array-script"),
-            WorkerTestSupport.testCapability("script:array-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:array-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:array-script"));
 
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(completionPublisher).complete(any(), captor.capture());
-        Map<String, Object> output = captor.getValue();
+        Map<String, Object> output = manager.executeProcess(def, Map.of(), ctx, capability);
+
         assertThat(output.get("stdout").toString()).contains("[1,2,3]");
         assertThat(output).containsEntry("exitCode", 0);
     }
 
     @Test
-    void submit_nonZeroExit_faults() {
-        resolver.initialize(Map.of(
-            "fail-script", new ScriptDefinition("fail-script", "/bin/sh",
-                List.of("-c", "exit 1"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_nonZeroExit_throwsRuntimeException() {
+        ScriptDefinition def = new ScriptDefinition("fail-script", "/bin/sh",
+            List.of("-c", "exit 1"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:fail-script"),
-            WorkerTestSupport.testCapability("script:fail-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:fail-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:fail-script"));
 
-        verify(faultPublisher).fault(
-            eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
-            any(WorkerCorrelationContext.class),
-            any(Capability.class), eq(1L), any(RuntimeException.class));
-        verify(completionPublisher, never()).complete(any(), any());
+        assertThatThrownBy(() -> manager.executeProcess(def, Map.of(), ctx, capability))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("exited with code 1");
     }
 
     @Test
-    void submit_timeout_permanentFault() {
-        resolver.initialize(Map.of(
-            "slow-script", new ScriptDefinition("slow-script", "/bin/sh",
-                List.of("-c", "sleep 60"),
-                null, Map.of(), 1, 1_048_576)
-        ));
+    void executeProcess_timeout_throwsPermanentFault() {
+        ScriptDefinition def = new ScriptDefinition("slow-script", "/bin/sh",
+            List.of("-c", "sleep 60"),
+            null, Map.of(), 1, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:slow-script"),
-            WorkerTestSupport.testCapability("script:slow-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:slow-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:slow-script"));
 
-        verify(faultPublisher).fault(
-            eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
-            any(WorkerCorrelationContext.class),
-            any(Capability.class), eq(1L), any(PermanentFaultException.class));
+        assertThatThrownBy(() -> manager.executeProcess(def, Map.of(), ctx, capability))
+            .isInstanceOf(PermanentFaultException.class)
+            .hasMessageContaining("timed out");
     }
 
     @Test
-    void submit_stdinDelivery_inputDataReachesProcess() {
-        resolver.initialize(Map.of(
-            "stdin-script", new ScriptDefinition("stdin-script", "/bin/sh",
-                List.of("-c", "cat"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_stdinDelivery_inputDataReachesProcess() {
+        ScriptDefinition def = new ScriptDefinition("stdin-script", "/bin/sh",
+            List.of("-c", "cat"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:stdin-script"),
-            WorkerTestSupport.testCapability("script:stdin-script"),
-            Map.of("key", "value"));
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:stdin-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:stdin-script"));
 
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(completionPublisher).complete(any(), captor.capture());
-        assertThat(captor.getValue()).containsEntry("key", "value");
+        Map<String, Object> output = manager.executeProcess(def, Map.of("key", "value"), ctx, capability);
+
+        assertThat(output).containsEntry("key", "value");
     }
 
     @Test
-    void submit_environmentVariablesSet() {
-        resolver.initialize(Map.of(
-            "env-script", new ScriptDefinition("env-script", "/bin/sh",
-                List.of("-c", "echo $CASEHUB_CAPABILITY"),
-                null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_environmentVariablesSet() {
+        ScriptDefinition def = new ScriptDefinition("env-script", "/bin/sh",
+            List.of("-c", "echo $CASEHUB_CAPABILITY"),
+            null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:env-script"),
-            WorkerTestSupport.testCapability("script:env-script"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:env-script");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:env-script"));
 
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(completionPublisher).complete(any(), captor.capture());
-        assertThat(captor.getValue().get("stdout").toString()).contains("script:env-script");
+        Map<String, Object> output = manager.executeProcess(def, Map.of(), ctx, capability);
+
+        assertThat(output.get("stdout").toString()).contains("script:env-script");
     }
 
     @Test
-    void submit_commandNotFound_permanentFault() {
-        resolver.initialize(Map.of(
-            "missing-cmd", new ScriptDefinition("missing-cmd",
-                "/nonexistent/command/xyz123",
-                List.of(), null, Map.of(), 30, 1_048_576)
-        ));
+    void executeProcess_commandNotFound_throwsPermanentFault() {
+        ScriptDefinition def = new ScriptDefinition("missing-cmd",
+            "/nonexistent/command/xyz123",
+            List.of(), null, Map.of(), 30, 1_048_576);
 
-        manager.submit(1L,
-            WorkerTestSupport.testCaseInstance(),
-            WorkerTestSupport.testWorker("w1", "script:missing-cmd"),
-            WorkerTestSupport.testCapability("script:missing-cmd"),
-            Map.of());
+        CaseInstance instance = WorkerTestSupport.testCaseInstance();
+        Capability capability = WorkerTestSupport.testCapability("script:missing-cmd");
+        WorkerCorrelationContext ctx = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:missing-cmd"));
 
-        verify(faultPublisher).fault(
-            eq(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT),
-            any(WorkerCorrelationContext.class),
-            any(Capability.class), eq(1L), any(PermanentFaultException.class));
+        assertThatThrownBy(() -> manager.executeProcess(def, Map.of(), ctx, capability))
+            .isInstanceOf(PermanentFaultException.class)
+            .hasMessageContaining("Command not found");
     }
+
+    // --- submit integration tests: verify fault routing and binding propagation ---
 
     @Test
     void submit_unknownCapability_permanentFault() {
@@ -218,8 +191,6 @@ class ScriptWorkerExecutionManagerTest {
             any(Capability.class), eq(1L), any(PermanentFaultException.class));
     }
 
-    // --- bindingName propagation tests ---
-
     @Test
     void submit_6arg_passesBindingNameThroughCompletion() {
         resolver.initialize(Map.of(
@@ -234,6 +205,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCapability("script:echo-script"),
             Map.of(), "binding-x");
 
+        verifyNoFaults();
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
         verify(completionPublisher).complete(ctxCaptor.capture(), any());
@@ -254,6 +226,7 @@ class ScriptWorkerExecutionManagerTest {
             WorkerTestSupport.testCapability("script:echo-script2"),
             Map.of());
 
+        verifyNoFaults();
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
         verify(completionPublisher).complete(ctxCaptor.capture(), any());
@@ -268,5 +241,15 @@ class ScriptWorkerExecutionManagerTest {
 
         assertThat(manager.supports("script:script-1", "t1")).isTrue();
         assertThat(manager.supports("script:script-2", "t1")).isFalse();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void verifyNoFaults() {
+        var invocations = mockingDetails(faultPublisher).getInvocations();
+        if (!invocations.isEmpty()) {
+            ArgumentCaptor<Throwable> errorCaptor = ArgumentCaptor.forClass(Throwable.class);
+            verify(faultPublisher).fault(anyString(), any(), any(), anyLong(), errorCaptor.capture());
+            throw new AssertionError("Expected completion but process faulted", errorCaptor.getValue());
+        }
     }
 }

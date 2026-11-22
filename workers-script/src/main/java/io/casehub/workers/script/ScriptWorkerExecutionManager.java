@@ -94,6 +94,7 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
             Map<String, Object> output = executeProcess(definition, inputData, ctx, capability);
             completionPublisher.complete(ctx, output);
         } catch (Exception t) {
+            LOG.errorf(t, "Script execution failed for capability %s", capability.name());
             faultPublisher.fault(ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT,
                                  ctx, capability, eventLogId, t);
         }
