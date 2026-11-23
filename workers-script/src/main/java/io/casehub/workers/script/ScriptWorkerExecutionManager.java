@@ -155,12 +155,10 @@ public class ScriptWorkerExecutionManager implements WorkerExecutionManager {
                 stdin.write(inputJson);
             }
         } catch (IOException e) {
-            if (!process.isAlive()) {
-                LOG.debugf("Stdin write failed after process exited (broken pipe) — ignoring");
-            } else {
-                process.destroyForcibly();
-                throw new RuntimeException("Failed to write inputData to stdin: " + e.getMessage());
-            }
+            // Broken pipe means the process closed stdin — either it exited fast
+            // or doesn't read stdin. The exit code is the authoritative signal,
+            // not isAlive() which has a TOCTOU race during process teardown.
+            LOG.debugf("Stdin write failed — deferring to process exit code: %s", e.getMessage());
         }
 
         boolean completed;

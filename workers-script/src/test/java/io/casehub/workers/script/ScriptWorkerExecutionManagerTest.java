@@ -1,23 +1,30 @@
 package io.casehub.workers.script;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
-
+import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.worker.api.Capability;
 import io.casehub.worker.api.Worker;
-import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.workers.common.PermanentFaultException;
 import io.casehub.workers.common.WorkerCorrelationContext;
 import io.casehub.workers.common.WorkerFaultPublisher;
 import io.casehub.workers.common.WorkflowCompletionPublisher;
 import io.casehub.workers.testing.WorkerTestSupport;
-import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.verify;
 
 class ScriptWorkerExecutionManagerTest {
 
@@ -172,6 +179,42 @@ class ScriptWorkerExecutionManagerTest {
             .isInstanceOf(PermanentFaultException.class)
             .hasMessageContaining("Command not found");
     }
+
+    @Test
+    void executeProcess_brokenPipe_successWhenProcessExitsZero() {
+        // Process closes stdin immediately and exits 0 — stdin write gets EPIPE
+        // but the process completed successfully. Before the fix, isAlive() TOCTOU
+        // race would destroyForcibly() and throw RuntimeException.
+        ScriptDefinition def = new ScriptDefinition("close-stdin", "/bin/sh",
+                                                    List.of("-c", "exec 0<&- ; echo '{\"status\":\"done\"}'"),
+                                                    null, Map.of(), 30, 1_048_576);
+
+        CaseInstance             instance   = WorkerTestSupport.testCaseInstance();
+        Capability               capability = WorkerTestSupport.testCapability("script:close-stdin");
+        WorkerCorrelationContext ctx        = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:close-stdin"));
+
+        Map<String, Object> output = manager.executeProcess(def, Map.of("key", "value"), ctx, capability);
+
+        assertThat(output).containsEntry("status", "done");
+    }
+
+    @Test
+    void executeProcess_brokenPipe_nonZeroExitStillReported() {
+        // Process closes stdin and exits non-zero — the exit code error should
+        // surface, not a misleading "Failed to write inputData to stdin" message.
+        ScriptDefinition def = new ScriptDefinition("close-stdin-fail", "/bin/sh",
+                                                    List.of("-c", "exec 0<&- ; echo 'bad things' >&2 ; exit 42"),
+                                                    null, Map.of(), 30, 1_048_576);
+
+        CaseInstance             instance   = WorkerTestSupport.testCaseInstance();
+        Capability               capability = WorkerTestSupport.testCapability("script:close-stdin-fail");
+        WorkerCorrelationContext ctx        = testCtx(instance, WorkerTestSupport.testWorker("w1", "script:close-stdin-fail"));
+
+        assertThatThrownBy(() -> manager.executeProcess(def, Map.of("key", "value"), ctx, capability))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("exited with code 42");
+    }
+
 
     // --- submit integration tests: verify fault routing and binding propagation ---
 
